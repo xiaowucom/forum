@@ -1,0 +1,52 @@
+<div class="container">
+  <a href="/profile" class="back-link">&#8592; 返回个人中心</a>
+  <h1 class="page-title">我赞过的内容</h1>
+
+  <% if (likedItems.length === 0) { %>
+    <div class="empty-state">
+      <p class="empty-tip">还没有点赞过内容</p>
+      <a href="/" class="btn btn-primary" style="margin-top:12px">去发现</a>
+    </div>
+  <% } else { %>
+    <div class="likes-list">
+      <% likedItems.forEach(function(item) { %>
+        <% var isTopic = item.topic_id !== null; %>
+        <% var targetUrl = isTopic ? '/topic/' + item.topic_id : '/topic/' + item.reply_topic_id + '#reply-' + item.reply_id; %>
+        <a href="<%= targetUrl %>" class="like-item">
+          <div class="like-item-type">
+            <% if (isTopic) { %>
+              <span class="like-badge like-badge--topic">帖子</span>
+            <% } else { %>
+              <span class="like-badge like-badge--reply">回复</span>
+            <% } %>
+          </div>
+          <div class="like-item-body">
+            <span class="like-item-title">
+              <%= isTopic ? item.topic_title : (item.reply_content || '').substring(0, 60) + ((item.reply_content || '').length > 60 ? '...' : '') %>
+            </span>
+            <div class="like-item-meta">
+              <% if (item.category_name) { %><span class="meta-cat"><%= item.category_name %></span> &middot; <% } %>
+              <span class="meta-time"><%= item.liked_at %></span>
+            </div>
+          </div>
+        </a>
+      <% }); %>
+    </div>
+
+    <% if (pagination.totalPages > 1) { %>
+    <div class="pagination">
+      <% if (pagination.page > 1) { %>
+        <a href="/profile/likes?page=<%= pagination.page - 1 %>" class="page-btn">&laquo; 上一页</a>
+      <% } else { %>
+        <span class="page-btn disabled">&laquo; 上一页</span>
+      <% } %>
+      <span class="page-info">第 <%= pagination.page %> / <%= pagination.totalPages %> 页（共 <%= pagination.total %> 条）</span>
+      <% if (pagination.page < pagination.totalPages) { %>
+        <a href="/profile/likes?page=<%= pagination.page + 1 %>" class="page-btn">下一页 &raquo;</a>
+      <% } else { %>
+        <span class="page-btn disabled">下一页 &raquo;</span>
+      <% } %>
+    </div>
+    <% } %>
+  <% } %>
+</div>

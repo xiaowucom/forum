@@ -1,0 +1,27 @@
+<% if (typeof totalPages !== 'undefined' && totalPages > 1) {
+  var base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  var queryBase = base + '?';
+  if (typeof queryParams !== 'undefined') {
+    for (var key in queryParams) {
+      if (key !== 'page' && queryParams[key]) {
+        queryBase += key + '=' + encodeURIComponent(queryParams[key]) + '&';
+      }
+    }
+  }
+%>
+<div class="pagination">
+  <% if (page > 1) { %>
+    <a href="<%= queryBase %>page=<%= page - 1 %>" class="page-btn">&laquo; 上一页</a>
+  <% } else { %>
+    <span class="page-btn disabled">&laquo; 上一页</span>
+  <% } %>
+
+  <span class="page-info">第 <%= page %> / <%= totalPages %> 页</span>
+
+  <% if (page < totalPages) { %>
+    <a href="<%= queryBase %>page=<%= page + 1 %>" class="page-btn">下一页 &raquo;</a>
+  <% } else { %>
+    <span class="page-btn disabled">下一页 &raquo;</span>
+  <% } %>
+</div>
+<% } %>

@@ -1,0 +1,48 @@
+<div class="container container-sm">
+  <h1 class="page-title">登录</h1>
+  <% if (typeof kicked !== 'undefined' && kicked) { %>
+  <div class="notification-banner">
+    您的密码已修改或账号已在其他设备登录，请重新登录。
+  </div>
+  <% } %>
+  <form id="loginForm" class="form" onsubmit="handleLogin(event)">
+    <div class="form-group">
+      <label for="username">用户名</label>
+      <input type="text" id="username" name="username" required autocomplete="username" class="input">
+    </div>
+    <div class="form-group">
+      <label for="password">密码</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password" class="input">
+    </div>
+    <div id="loginError" class="form-error" style="display:none"></div>
+    <button type="submit" class="btn btn-primary btn-block">登录</button>
+  </form>
+  <% if (settings.enable_register === 'true') { %>
+  <p class="form-footer">还没有账号？<a href="/register">立即注册</a></p>
+  <% } %>
+</div>
+
+<script>
+function handleLogin(e) {
+  e.preventDefault();
+  var errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+  fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: document.getElementById('username').value,
+      password: document.getElementById('password').value,
+    }),
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      if (result.ok) {
+        var redirect = '<%= typeof redirect !== "undefined" ? redirect : "" %>';
+        location.href = redirect || '/';
+      } else {
+        errEl.textContent = result.data.error || '登录失败';
+        errEl.style.display = 'block';
+      }
+    });
+}
+</script>

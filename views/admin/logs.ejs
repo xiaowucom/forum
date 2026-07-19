@@ -1,0 +1,200 @@
+<div class="container">
+  <h1 class="page-title">管理后台</h1>
+  <div class="admin-nav">
+    <a href="/admin" class="admin-nav-link">概览</a>
+    <a href="/admin/users" class="admin-nav-link">用户管理</a>
+    <a href="/admin/categories" class="admin-nav-link">版块管理</a>
+    <a href="/admin/messages" class="admin-nav-link">系统消息</a>
+    <a href="/admin/topics" class="admin-nav-link">帖子管理</a>
+    <a href="/admin/settings" class="admin-nav-link">设置</a>
+    <a href="/admin/logs" class="admin-nav-link active">日志中心</a>
+  </div>
+
+  <div class="log-filters">
+    <div class="log-filter-row">
+      <input type="text" id="filterKeyword" class="input" placeholder="搜索日志..." style="flex:2;min-width:140px">
+      <select id="filterType" class="input" style="flex:1;min-width:100px">
+        <option value="">全部类型</option>
+        <option value="system">系统</option>
+        <option value="admin">管理员</option>
+        <option value="user">用户</option>
+        <option value="security">安全</option>
+      </select>
+      <select id="filterLevel" class="input" style="flex:1;min-width:100px">
+        <option value="">全部等级</option>
+        <option value="info">信息</option>
+        <option value="warning">警告</option>
+        <option value="error">错误</option>
+      </select>
+    </div>
+    <div class="log-filter-row">
+      <input type="text" id="filterUser" class="input" placeholder="按用户名筛选..." style="flex:1;min-width:120px">
+      <input type="date" id="filterStart" class="input" style="flex:1;min-width:120px" placeholder="开始日期">
+      <input type="date" id="filterEnd" class="input" style="flex:1;min-width:120px" placeholder="结束日期">
+      <button class="btn btn-primary" id="filterBtn">筛选</button>
+      <button class="btn btn-ghost" id="resetBtn">重置</button>
+    </div>
+  </div>
+
+  <div id="logResults"></div>
+  <div id="logLoading" class="loading">加载中...</div>
+  <div id="logEmpty" class="empty-tip" style="display:none">暂无日志记录</div>
+  <div id="logPager" class="pagination" style="display:none"></div>
+</div>
+
+<script>
+(function() {
+  var currentPage = 1;
+  var filters = {};
+
+  function escapeHTML(str) {
+    var div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
+  function typeLabel(t) {
+    var map = { system: '系统', admin: '管理员', user: '用户', security: '安全' };
+    return map[t] || t;
+  }
+
+  function typeClass(t) {
+    return 'log-type-' + t;
+  }
+
+  function levelLabel(l) {
+    var map = { info: '信息', warning: '警告', error: '错误' };
+    return map[l] || l;
+  }
+
+  function levelClass(l) {
+    return 'log-level-' + l;
+  }
+
+  function formatTime(dt) {
+    if (!dt) return '';
+    return dt.substring(0, 16).replace('T', ' ');
+  }
+
+  function renderItem(log) {
+    return '<div class="log-card" data-id="' + log.id + '">'
+      + '<div class="log-card-header" onclick="toggleLogDetail(event,' + log.id + ')">'
+        + '<span class="log-badge ' + typeClass(log.type) + '">' + typeLabel(log.type) + '</span>'
+        + '<span class="log-badge ' + levelClass(log.level) + '">' + levelLabel(log.level) + '</span>'
+        + '<span class="log-action">' + escapeHTML(log.action) + '</span>'
+        + '<span class="log-time">' + formatTime(log.created_at) + '</span>'
+        + '<span class="log-expand" id="logExpand' + log.id + '">&#x25BC;</span>'
+      + '</div>'
+      + '<div class="log-card-detail" id="logDetail' + log.id + '" style="display:none">'
+        + (log.username ? '<div class="log-detail-row"><span class="log-detail-label">用户</span>' + (log.user_id ? '<a href="/user/' + log.user_id + '" class="author-link">' + escapeHTML(log.username) + '</a>' : '<span>' + escapeHTML(log.username) + '</span>') + '</div>' : '')
+        + (log.detail ? '<div class="log-detail-row"><span class="log-detail-label">详情</span><span>' + escapeHTML(log.detail) + '</span></div>' : '')
+        + (log.ip ? '<div class="log-detail-row"><span class="log-detail-label">IP</span><span>' + escapeHTML(log.ip) + '</span></div>' : '')
+        + '<div class="log-detail-row"><span class="log-detail-label">时间</span><span>' + formatTime(log.created_at) + '</span></div>'
+      + '</div>'
+    + '</div>';
+  }
+
+  function loadResults() {
+    document.getElementById('logLoading').style.display = 'block';
+    document.getElementById('logResults').innerHTML = '';
+    document.getElementById('logEmpty').style.display = 'none';
+    document.getElementById('logPager').style.display = 'none';
+
+    var params = 'page=' + currentPage;
+    if (filters.keyword) params += '&keyword=' + encodeURIComponent(filters.keyword);
+    if (filters.type) params += '&type=' + filters.type;
+    if (filters.level) params += '&level=' + filters.level;
+    if (filters.user) params += '&user=' + encodeURIComponent(filters.user);
+    if (filters.start) params += '&start=' + filters.start;
+    if (filters.end) params += '&end=' + filters.end;
+
+    fetch('/api/admin/logs?' + params)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        document.getElementById('logLoading').style.display = 'none';
+        if (d.total === 0) {
+          document.getElementById('logEmpty').style.display = 'block';
+          return;
+        }
+        var html = '';
+        for (var i = 0; i < d.logs.length; i++) {
+          html += renderItem(d.logs[i]);
+        }
+        document.getElementById('logResults').innerHTML = html;
+
+        if (d.totalPages > 1) {
+          var phtml = '';
+          for (var i = 1; i <= d.totalPages; i++) {
+            phtml += '<button class="page-btn' + (i === currentPage ? ' active' : '') + '" onclick="goLogPage(' + i + ')">' + i + '</button>';
+          }
+          document.getElementById('logPager').innerHTML = phtml;
+          document.getElementById('logPager').style.display = 'flex';
+        }
+      })
+      .catch(function() {
+        document.getElementById('logLoading').style.display = 'none';
+        document.getElementById('logResults').innerHTML = '<div class="loading">加载失败</div>';
+      });
+  }
+
+  window.goLogPage = function(p) {
+    currentPage = p;
+    loadResults();
+    window.scrollTo({ top: 150, behavior: 'smooth' });
+  };
+
+  window.toggleLogDetail = function(e, id) {
+    var detail = document.getElementById('logDetail' + id);
+    var icon = document.getElementById('logExpand' + id);
+    if (!detail || !icon) return;
+    if (detail.style.display === 'block') {
+      detail.style.display = 'none';
+      icon.innerHTML = '&#x25BC;';
+    } else {
+      detail.style.display = 'block';
+      icon.innerHTML = '&#x25B2;';
+    }
+  };
+
+  function collectFilters() {
+    filters.keyword = document.getElementById('filterKeyword').value.trim();
+    filters.type = document.getElementById('filterType').value;
+    filters.level = document.getElementById('filterLevel').value;
+    filters.user = document.getElementById('filterUser').value.trim();
+    filters.start = document.getElementById('filterStart').value;
+    filters.end = document.getElementById('filterEnd').value;
+  }
+
+  function applyFilters() {
+    collectFilters();
+    currentPage = 1;
+    loadResults();
+  }
+
+  document.getElementById('filterBtn').addEventListener('click', applyFilters);
+
+  document.getElementById('filterKeyword').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') applyFilters();
+  });
+
+  document.getElementById('filterType').addEventListener('change', applyFilters);
+  document.getElementById('filterLevel').addEventListener('change', applyFilters);
+  document.getElementById('filterUser').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') applyFilters();
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', function() {
+    document.getElementById('filterKeyword').value = '';
+    document.getElementById('filterType').value = '';
+    document.getElementById('filterLevel').value = '';
+    document.getElementById('filterUser').value = '';
+    document.getElementById('filterStart').value = '';
+    document.getElementById('filterEnd').value = '';
+    filters = {};
+    currentPage = 1;
+    loadResults();
+  });
+
+  loadResults();
+})();
+</script>

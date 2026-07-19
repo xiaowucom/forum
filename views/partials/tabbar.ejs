@@ -1,0 +1,148 @@
+<nav class="tabbar">
+  <a href="/" class="tab <%= body === 'home' ? 'tab-active' : '' %>">
+    <span class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12L12 3l9 9"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg></span>
+    <span class="tab-label">首页</span>
+  </a>
+  <a href="/categories" class="tab <%= body === 'categories' ? 'tab-active' : '' %>">
+    <span class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/><rect x="3" y="14" width="7" height="7" rx="1.2"/><rect x="14" y="14" width="7" height="7" rx="1.2"/></svg></span>
+    <span class="tab-label">版块</span>
+  </a>
+  <% if (settings.enable_new_topic === 'true') { %>
+  <a href="javascript:void(0)" class="tab tab-center" onclick="openCategoryPicker()">
+    <span class="tab-icon-publish">＋</span>
+    <span class="tab-label">发布</span>
+  </a>
+  <% } else { %>
+  <span class="tab tab-center" style="visibility:hidden">
+    <span class="tab-icon-publish">＋</span>
+    <span class="tab-label">发布</span>
+  </span>
+  <% } %>
+  <% if (settings.enable_notifications === 'true') { %>
+  <a href="/messages" class="tab <%= body === 'messages' ? 'tab-active' : '' %>">
+    <span class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+    <span class="tab-badge" id="tabBadge" style="display:none">0</span>
+    <span class="tab-label">消息</span>
+  </a>
+  <% } else { %>
+  <span class="tab" style="visibility:hidden">
+    <span class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+    <span class="tab-label">消息</span>
+  </span>
+  <% } %>
+  <a href="/profile" class="tab <%= body === 'profile' ? 'tab-active' : '' %>">
+    <span class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 22c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg></span>
+    <span class="tab-label">我的</span>
+  </a>
+</nav>
+
+<!-- 版块快速选择层 -->
+<div class="cat-picker-overlay" id="catPickerOverlay" style="display:none" onclick="if(event.target===this)closeCategoryPicker()">
+  <div class="cat-picker-dialog">
+    <div class="cat-picker-header">
+      <span class="cat-picker-title">选择发帖版块</span>
+      <button class="cat-picker-close" onclick="closeCategoryPicker()">&times;</button>
+    </div>
+    <div class="cat-picker-body">
+      <div class="cat-chip-selector" id="catPickerChips">
+        <div class="cat-picker-loading">加载版块中...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var badge = document.getElementById('tabBadge');
+  if (!badge) return;
+  fetch('/api/notifications/unread-count')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.count > 0) {
+        badge.textContent = d.count > 99 ? '99+' : d.count;
+        badge.style.display = 'flex';
+      }
+    })
+    .catch(function() {});
+})();
+function updateBadge() {
+  var badge = document.getElementById('tabBadge');
+  if (!badge) return;
+  fetch('/api/notifications/unread-count')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.count > 0) {
+        badge.textContent = d.count > 99 ? '99+' : d.count;
+        badge.style.display = 'flex';
+      } else {
+        badge.style.display = 'none';
+      }
+    })
+    .catch(function() {});
+}
+</script>
+
+<script>
+(function() {
+  var COLORS = ['#6366f1','#8b5cf6','#ec4899','#f97316','#06b6d4','#10b981'];
+  var userRole = <%- JSON.stringify(typeof user !== 'undefined' && user ? user.role : null) %>;
+  var isAdmin = userRole === 'admin';
+
+  window.openCategoryPicker = function() {
+    // 在版块内页时跳过选择层，直接预选当前版块进入发帖页
+    var m = location.pathname.match(/^\/category\/(\d+)$/);
+    if (m) {
+      location.href = '/topic/new?category_id=' + m[1];
+      return;
+    }
+
+    var overlay = document.getElementById('catPickerOverlay');
+    overlay.style.display = 'flex';
+
+    // 如果已经加载过版块列表，直接显示
+    var chipsContainer = document.getElementById('catPickerChips');
+    if (chipsContainer.children.length > 1 || (chipsContainer.children.length === 1 && chipsContainer.children[0].classList.contains('cat-chip'))) {
+      return;
+    }
+
+    // 首次打开：请求版块列表
+    fetch('/api/categories')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var html = '';
+        d.categories.forEach(function(cat, i) {
+          var color = COLORS[i % 6];
+          var restricted = cat.post_restricted && !isAdmin;
+          if (restricted) {
+            html += '<span class="cat-chip cat-chip-disabled" data-id="' + cat.id + '" style="--chip-color:' + color + '" onclick="showRestrictedTip()">';
+            html += '<span class="cat-chip-icon">' + cat.name.charAt(0) + '</span>';
+            html += '<span>' + cat.name + '</span>';
+            html += '<span class="cat-chip-badge">仅管理员</span>';
+            html += '</span>';
+          } else {
+            html += '<span class="cat-chip" data-id="' + cat.id + '" onclick="goNewTopic(' + cat.id + ')" style="--chip-color:' + color + '">';
+            html += '<span class="cat-chip-icon">' + cat.name.charAt(0) + '</span>';
+            html += '<span>' + cat.name + '</span>';
+            html += '</span>';
+          }
+        });
+        chipsContainer.innerHTML = html;
+      })
+      .catch(function() {
+        chipsContainer.innerHTML = '<div class="cat-picker-loading">加载失败，请重试</div>';
+      });
+  };
+
+  window.closeCategoryPicker = function() {
+    document.getElementById('catPickerOverlay').style.display = 'none';
+  };
+
+  window.goNewTopic = function(categoryId) {
+    location.href = '/topic/new?category_id=' + categoryId;
+  };
+
+  window.showRestrictedTip = function() {
+    alert('仅管理员可在该版块发帖');
+  };
+})();
+</script>

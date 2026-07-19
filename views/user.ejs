@@ -1,0 +1,95 @@
+<div class="container">
+  <a href="javascript:history.back()" class="back-link" style="display:inline-block;margin-bottom:20px">&#8592; 返回</a>
+
+  <!-- 个人信息卡片 -->
+  <div class="profile-header">
+    <% if (profileUser.avatar) { %>
+      <img class="profile-avatar-img" src="<%= profileUser.avatar %>" alt="头像" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <span class="profile-avatar profile-avatar--fallback" style="display:none"><%= (profileUser.nickname || profileUser.username).charAt(0) %></span>
+    <% } else { %>
+      <span class="profile-avatar"><%= (profileUser.nickname || profileUser.username).charAt(0) %></span>
+    <% } %>
+    <div class="profile-info">
+      <div class="profile-name-row">
+        <div>
+          <h1 class="profile-name">
+            <%= profileUser.nickname || profileUser.username %>
+            <% if (profileUser.role === 'admin') { %>
+              <span class="badge badge-admin">管理员</span>
+            <% } %>
+          </h1>
+          <% if (profileUser.nickname && profileUser.nickname !== profileUser.username) { %>
+            <span class="profile-username">@<%= profileUser.username %></span>
+          <% } %>
+        </div>
+        <% if (isSelf) { %>
+          <a href="/profile" class="btn btn-xs btn-ghost">编辑资料</a>
+        <% } %>
+      </div>
+      <p class="profile-bio"><%= profileUser.bio || '暂无简介' %></p>
+      <p class="profile-meta">注册于 <%= profileUser.created_at.substring(0, 10) %></p>
+    </div>
+  </div>
+
+  <!-- 数据统计 -->
+  <div class="profile-stats">
+    <div class="stat-item">
+      <span class="stat-num"><%= stats.topic_count %></span>
+      <span class="stat-label">发帖</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num"><%= stats.reply_count %></span>
+      <span class="stat-label">回复</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num"><%= stats.total_likes %></span>
+      <span class="stat-label">获赞</span>
+    </div>
+  </div>
+
+  <!-- 帖子列表 -->
+  <div class="profile-section">
+    <h2 class="profile-section-title">最近发帖</h2>
+    <% if (topics.length === 0) { %>
+      <div class="profile-menu">
+        <div class="profile-menu-item profile-menu-item--disabled">
+          <span>暂无帖子</span>
+        </div>
+      </div>
+    <% } else { %>
+      <div class="topic-feed">
+        <% topics.forEach(function(t) { %>
+          <div class="topic-item">
+            <a href="/topic/<%= t.id %>" class="topic-link">
+              <span class="topic-item-title"><%= t.title %></span>
+              <% if (t.is_pinned) { %><span class="badge badge-pin">置顶</span><% } %>
+              <% if (t.is_essence) { %><span class="badge badge-essence">精华</span><% } %>
+            </a>
+            <div class="topic-item-meta">
+              <span class="meta-cat"><%= t.category_name %></span>
+              &middot; <%= t.reply_count %> 回复
+              &middot; <%= t.view_count %> 阅读
+              &middot; <span class="meta-time"><%= t.created_at.substring(0, 10) %></span>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+
+      <% if (pagination.totalPages > 1) { %>
+      <div class="pagination" style="margin-top:16px">
+        <% if (pagination.page > 1) { %>
+          <a href="/user/<%= profileUser.id %>?page=<%= pagination.page - 1 %>" class="page-btn">&laquo; 上一页</a>
+        <% } else { %>
+          <span class="page-btn disabled">&laquo; 上一页</span>
+        <% } %>
+        <span class="page-info">第 <%= pagination.page %> / <%= pagination.totalPages %> 页（共 <%= pagination.total %> 篇）</span>
+        <% if (pagination.page < pagination.totalPages) { %>
+          <a href="/user/<%= profileUser.id %>?page=<%= pagination.page + 1 %>" class="page-btn">下一页 &raquo;</a>
+        <% } else { %>
+          <span class="page-btn disabled">下一页 &raquo;</span>
+        <% } %>
+      </div>
+      <% } %>
+    <% } %>
+  </div>
+</div>

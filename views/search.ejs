@@ -1,0 +1,269 @@
+<div class="container" id="searchPage">
+  <div class="section-label">搜索</div>
+
+  <div class="search-box">
+    <div class="search-input-row">
+      <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" class="search-field" placeholder="输入关键词搜索..."
+             value="<%= keyword %>" autofocus>
+      <button id="searchBtn" class="btn btn-primary search-submit-btn">搜索</button>
+    </div>
+
+    <div class="search-scope" id="searchScope">
+      <button class="scope-item<%= scope==='all' ? ' active' : '' %>" data-scope="all">全部</button>
+      <button class="scope-item<%= scope==='title' ? ' active' : '' %>" data-scope="title">帖子标题</button>
+      <button class="scope-item<%= scope==='content' ? ' active' : '' %>" data-scope="content">帖子内容</button>
+      <button class="scope-item<%= scope==='user' ? ' active' : '' %>" data-scope="user">用户名</button>
+      <button class="scope-item<%= scope==='category' ? ' active' : '' %>" data-scope="category">版块名称</button>
+    </div>
+
+    <div class="search-toolbar" id="searchToolbar" style="display:none">
+      <div class="search-sort-group">
+        <span class="sort-label">排序</span>
+        <button class="sort-item<%= sort==='newest' ? ' active' : '' %>" data-sort="newest">最新发布</button>
+        <button class="sort-item<%= sort==='replies' ? ' active' : '' %>" data-sort="replies">最多回复</button>
+        <button class="sort-item<%= sort==='likes' ? ' active' : '' %>" data-sort="likes">最多点赞</button>
+        <button class="sort-item<%= sort==='views' ? ' active' : '' %>" data-sort="views">最多浏览</button>
+      </div>
+      <span class="search-count" id="searchCount"></span>
+    </div>
+  </div>
+
+  <div id="searchResults"></div>
+  <div id="searchPagination"></div>
+</div>
+
+<script>
+(function() {
+  var currentPage = 1;
+  var currentScope = '<%= scope %>';
+  var currentSort = '<%= sort %>';
+  var currentKeyword = '<%- keyword.replace(/'/g, "\\'") %>';
+  var isSearching = false;
+
+  function escapeHTML(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function highlightKeyword(text, keyword, maxLen) {
+    if (!keyword || !text) return escapeHTML(text);
+    var escaped = escapeHTML(text);
+    if (maxLen && escaped.length > maxLen) {
+      escaped = escaped.substring(0, maxLen) + '...';
+    }
+    var pattern = new RegExp('(' + escapeRegex(escapeHTML(keyword)) + ')', 'gi');
+    return escaped.replace(pattern, '<mark class="search-highlight">$1</mark>');
+  }
+
+  function formatTime(dt) {
+    if (!dt) return '';
+    var d = new Date(dt.replace(' ', 'T') + (dt.indexOf('+') === -1 ? '+08:00' : ''));
+    var now = Date.now();
+    var diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+    if (diff < 2592000) return Math.floor(diff / 86400) + ' 天前';
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  function buildCard(topic, keyword) {
+    var pinnedHtml = topic.is_pinned ? '<span class="badge badge-pin">置顶</span>' : '';
+    var essenceHtml = topic.is_essence ? '<span class="badge badge-essence">精华</span>' : '';
+    var authorHtml = topic.username
+      ? '<a href="/user/' + topic.author_user_id + '" class="search-result-author author-link">' + escapeHTML(topic.nickname || topic.username) + '</a>'
+      : '<span class="search-result-author deleted-user">已注销用户</span>';
+    var catName = topic.category_name || '未分类';
+
+    var titleHtml = highlightKeyword(topic.title, keyword, 80);
+    var contentPreview = (topic.content || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+    var contentHtml = keyword
+      ? highlightKeyword(contentPreview, keyword, 150)
+      : escapeHTML(contentPreview.substring(0, 150));
+
+    return '<a href="/topic/' + topic.id + '" class="search-result-card">' +
+      '<div class="search-result-header">' +
+        '<span class="search-result-title">' + titleHtml + '</span>' +
+        '<span class="search-result-badges">' + pinnedHtml + essenceHtml + '</span>' +
+      '</div>' +
+      '<div class="search-result-preview">' + contentHtml + '</div>' +
+      '<div class="search-result-meta">' +
+        '<span class="search-result-cat">' + escapeHTML(catName) + '</span>' +
+        '<span class="post-dot"></span>' +
+        authorHtml +
+        '<span class="post-dot"></span>' +
+        '<span class="sr-stat"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>' + topic.reply_count + '</span>' +
+        '<span class="post-dot"></span>' +
+        '<span class="search-result-time">' + formatTime(topic.created_at) + '</span>' +
+      '</div>' +
+    '</a>';
+  }
+
+  function buildEmpty(keyword) {
+    return '<div class="empty-card">' +
+      '<div class="empty-card-icon">' +
+        '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>' +
+      '</div>' +
+      '<p>未找到与 <strong>' + escapeHTML(keyword) + '</strong> 相关的结果</p>' +
+      '<span>试试其他关键词或调整搜索范围</span>' +
+    '</div>';
+  }
+
+  function buildEmptyQuery() {
+    return '<div class="empty-card">' +
+      '<div class="empty-card-icon">' +
+        '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' +
+      '</div>' +
+      '<p>输入关键词开始搜索</p>' +
+      '<span>支持搜索帖子标题、内容、用户名和版块名称</span>' +
+    '</div>';
+  }
+
+  function buildPagination(page, totalPages) {
+    if (totalPages <= 1) return '';
+    var html = '<div class="pagination">';
+    for (var i = 1; i <= totalPages; i++) {
+      if (i === page) {
+        html += '<span class="page-link active">' + i + '</span>';
+      } else {
+        html += '<a href="javascript:void(0)" class="page-link" data-page="' + i + '">' + i + '</a>';
+      }
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function loadResults(keyword, scope, sort, page) {
+    var input = document.getElementById('searchInput');
+    keyword = keyword || (input ? input.value.trim() : '');
+    scope = scope || currentScope;
+    sort = sort || currentSort;
+    page = page || currentPage;
+
+    if (!keyword) {
+      document.getElementById('searchResults').innerHTML = buildEmptyQuery();
+      document.getElementById('searchPagination').innerHTML = '';
+      document.getElementById('searchToolbar').style.display = 'none';
+      return;
+    }
+
+    if (isSearching) return;
+    isSearching = true;
+    document.getElementById('searchResults').innerHTML = '<div class="loading">搜索中...</div>';
+    document.getElementById('searchPagination').innerHTML = '';
+
+    var params = 'q=' + encodeURIComponent(keyword) + '&scope=' + scope + '&sort=' + sort + '&page=' + page;
+    var pageSize = (window.SITE_CONFIG && window.SITE_CONFIG.pageSize) || 20;
+    params += '&pageSize=' + pageSize;
+
+    fetch('/api/search?' + params)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        isSearching = false;
+        updateURL(keyword, scope, sort, page);
+
+        if (!data.topics || data.topics.length === 0) {
+          document.getElementById('searchResults').innerHTML = buildEmpty(keyword);
+          document.getElementById('searchPagination').innerHTML = '';
+          document.getElementById('searchToolbar').style.display = 'flex';
+          document.getElementById('searchCount').textContent = '共 0 条结果';
+        } else {
+          var html = '';
+          for (var i = 0; i < data.topics.length; i++) {
+            html += buildCard(data.topics[i], keyword);
+          }
+          document.getElementById('searchResults').innerHTML = html;
+          document.getElementById('searchPagination').innerHTML = buildPagination(data.page, data.totalPages);
+          document.getElementById('searchToolbar').style.display = 'flex';
+          document.getElementById('searchCount').textContent = '共 ' + data.total + ' 条结果';
+
+          bindPagination();
+        }
+      })
+      .catch(function() {
+        isSearching = false;
+        document.getElementById('searchResults').innerHTML = '<div class="loading">搜索失败，请重试</div>';
+        document.getElementById('searchPagination').innerHTML = '';
+      });
+  }
+
+  function updateURL(keyword, scope, sort, page) {
+    var url = '/search?q=' + encodeURIComponent(keyword);
+    if (scope !== 'all') url += '&scope=' + scope;
+    if (sort !== 'newest') url += '&sort=' + sort;
+    if (page > 1) url += '&page=' + page;
+    history.pushState(null, '', url);
+  }
+
+  function bindPagination() {
+    var links = document.querySelectorAll('#searchPagination .page-link');
+    for (var i = 0; i < links.length; i++) {
+      links[i].addEventListener('click', function() {
+        var p = parseInt(this.getAttribute('data-page'));
+        if (p !== currentPage) {
+          currentPage = p;
+          loadResults(null, currentScope, currentSort, p);
+          window.scrollTo({ top: 200, behavior: 'smooth' });
+        }
+      });
+    }
+  }
+
+  function doSearch(e) {
+    if (e) e.preventDefault();
+    currentPage = 1;
+    var input = document.getElementById('searchInput');
+    currentKeyword = input.value.trim();
+    loadResults(currentKeyword, currentScope, currentSort, 1);
+  }
+
+  function setScope(scope) {
+    if (scope === currentScope) return;
+    currentScope = scope;
+    currentPage = 1;
+    var items = document.querySelectorAll('#searchScope .scope-item');
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.toggle('active', items[i].getAttribute('data-scope') === scope);
+    }
+    if (currentKeyword) loadResults(currentKeyword, currentScope, currentSort, 1);
+  }
+
+  function setSort(sort) {
+    if (sort === currentSort) return;
+    currentSort = sort;
+    currentPage = 1;
+    var items = document.querySelectorAll('.sort-item');
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.toggle('active', items[i].getAttribute('data-sort') === sort);
+    }
+    if (currentKeyword) loadResults(currentKeyword, currentScope, currentSort, 1);
+  }
+
+  document.getElementById('searchInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doSearch(e);
+  });
+  document.getElementById('searchBtn').addEventListener('click', doSearch);
+
+  document.getElementById('searchScope').addEventListener('click', function(e) {
+    var btn = e.target.closest('.scope-item');
+    if (!btn) return;
+    setScope(btn.getAttribute('data-scope'));
+  });
+
+  document.querySelector('.search-sort-group').addEventListener('click', function(e) {
+    var btn = e.target.closest('.sort-item');
+    if (!btn) return;
+    setSort(btn.getAttribute('data-sort'));
+  });
+
+  if (currentKeyword) {
+    loadResults(currentKeyword, currentScope, currentSort, 1);
+  }
+})();
+</script>

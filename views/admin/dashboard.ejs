@@ -1,0 +1,202 @@
+<div class="container">
+  <h1 class="page-title">管理后台</h1>
+  <div class="admin-nav">
+    <a href="/admin" class="admin-nav-link active">概览</a>
+    <a href="/admin/users" class="admin-nav-link">用户管理</a>
+    <a href="/admin/categories" class="admin-nav-link">版块管理</a>
+    <a href="/admin/messages" class="admin-nav-link">系统消息</a>
+    <a href="/admin/topics" class="admin-nav-link">帖子管理</a>
+    <a href="/admin/settings" class="admin-nav-link">设置</a>
+    <a href="/admin/logs" class="admin-nav-link">日志中心</a>
+  </div>
+
+  <div class="dash-refresh-bar">
+    <span class="dash-refresh-text" id="refreshTime">刚刚刷新</span>
+    <button class="btn btn-xs btn-ghost" onclick="refreshAll()">刷新</button>
+  </div>
+
+  <div id="statsGrid" class="stats-grid">
+    <div class="stat-card"><div class="stat-label">用户数</div><div class="stat-value" id="statUsers">-</div></div>
+    <div class="stat-card"><div class="stat-label">帖子数</div><div class="stat-value" id="statTopics">-</div></div>
+    <div class="stat-card"><div class="stat-label">回复数</div><div class="stat-value" id="statReplies">-</div></div>
+    <div class="stat-card"><div class="stat-label">版块数</div><div class="stat-value" id="statCategories">-</div></div>
+  </div>
+
+  <div class="chart-row chart-row-wide">
+    <div class="chart-card">
+      <div class="chart-title">近7天活跃趋势</div>
+      <div class="chart-wrap"><canvas id="dailyChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="chart-row">
+    <div class="chart-card">
+      <div class="chart-title">热门版块</div>
+      <div class="chart-wrap"><canvas id="catChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">热门作者</div>
+      <div class="chart-wrap"><canvas id="authorChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">热门帖子</div>
+      <div class="chart-wrap"><canvas id="topicChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function() {
+  var dailyChart, catChart, authorChart, topicChart;
+  var refreshSeconds = 0;
+  var refreshTimer;
+
+  var chartColors = {
+    purple: '#7c3aed',
+    green: '#10b981',
+    orange: '#f59e0b',
+    red: '#ef4444',
+    blue: '#3b82f6',
+    teal: '#14b8a6',
+  };
+
+  var chartPalette = [chartColors.purple, chartColors.green, chartColors.orange, chartColors.blue, chartColors.teal];
+
+  function loadStats() {
+    fetch('/api/admin/stats')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        document.getElementById('statUsers').textContent = d.stats.user_count;
+        document.getElementById('statTopics').textContent = d.stats.topic_count;
+        document.getElementById('statReplies').textContent = d.stats.reply_count;
+        document.getElementById('statCategories').textContent = d.stats.category_count;
+        refreshSeconds = 0;
+        updateRefreshTime();
+      })
+      .catch(function() {
+        document.querySelectorAll('.stat-value').forEach(function(el) { el.textContent = '--'; });
+      });
+  }
+
+  function loadCharts() {
+    fetch('/api/admin/stats/charts')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        renderDailyChart(d.daily);
+        renderCategoryChart(d.popularCategories);
+        renderAuthorChart(d.popularAuthors);
+        renderTopicChart(d.popularTopics);
+        refreshSeconds = 0;
+        updateRefreshTime();
+      });
+  }
+
+  function renderDailyChart(data) {
+    var ctx = document.getElementById('dailyChart').getContext('2d');
+    if (dailyChart) dailyChart.destroy();
+
+    var labels = data.map(function(d) { return d.date; });
+    dailyChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: '发帖', data: data.map(function(d) { return d.topics; }), borderColor: chartColors.purple, backgroundColor: 'rgba(124,58,237,.08)', fill: true, tension: .4, pointRadius: 3, pointHoverRadius: 5 },
+          { label: '回复', data: data.map(function(d) { return d.replies; }), borderColor: chartColors.green, backgroundColor: 'rgba(16,185,129,.08)', fill: true, tension: .4, pointRadius: 3, pointHoverRadius: 5 },
+          { label: '注册', data: data.map(function(d) { return d.registrations; }), borderColor: chartColors.orange, backgroundColor: 'rgba(245,158,11,.08)', fill: true, tension: .4, pointRadius: 3, pointHoverRadius: 5 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20, font: { size: 12 } } } },
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: 'rgba(0,0,0,.04)' } },
+          x: { ticks: { font: { size: 11 } }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  function renderBarChart(canvasId, labels, values, labelField, valueField) {
+    var ctx = document.getElementById(canvasId).getContext('2d');
+    // Max 15 chars for label
+    var shortLabels = labels.map(function(l) { return l.length > 12 ? l.substring(0, 11) + '...' : l; });
+
+    return new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: shortLabels,
+        datasets: [{
+          label: valueField || '数量',
+          data: values,
+          backgroundColor: chartPalette.slice(0, labels.length),
+          borderRadius: 6,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: 'rgba(0,0,0,.04)' } },
+          y: { ticks: { font: { size: 11 }, autoSkip: false }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  function renderCategoryChart(data) {
+    if (catChart) catChart.destroy();
+    catChart = renderBarChart('catChart',
+      data.map(function(d) { return d.name; }),
+      data.map(function(d) { return d.topic_count; }),
+      'name', '帖子数');
+  }
+
+  function renderAuthorChart(data) {
+    if (authorChart) authorChart.destroy();
+    authorChart = renderBarChart('authorChart',
+      data.map(function(d) { return d.nickname || d.username; }),
+      data.map(function(d) { return d.topic_count; }),
+      'username', '发帖数');
+  }
+
+  function renderTopicChart(data) {
+    if (topicChart) topicChart.destroy();
+    topicChart = renderBarChart('topicChart',
+      data.map(function(d) { return d.title; }),
+      data.map(function(d) { return d.reply_count; }),
+      'title', '回复数');
+  }
+
+  function updateRefreshTime() {
+    var el = document.getElementById('refreshTime');
+    if (refreshSeconds === 0) el.textContent = '刚刚刷新';
+    else if (refreshSeconds < 60) el.textContent = refreshSeconds + ' 秒前刷新';
+    else el.textContent = Math.floor(refreshSeconds / 60) + ' 分钟前刷新';
+  }
+
+  window.refreshAll = function() {
+    loadStats();
+    loadCharts();
+  };
+
+  // 每30秒自动刷新
+  refreshTimer = setInterval(function() {
+    refreshSeconds += 1;
+    updateRefreshTime();
+    if (refreshSeconds >= 30) {
+      loadStats();
+      loadCharts();
+    }
+  }, 1000);
+
+  loadStats();
+  loadCharts();
+})();
+</script>

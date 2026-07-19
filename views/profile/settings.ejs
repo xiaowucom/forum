@@ -1,0 +1,214 @@
+<div class="container">
+  <a href="/profile" class="back-link" style="display:inline-block;margin-bottom:20px">&#8592; 返回个人中心</a>
+  <h1 class="page-title">设置</h1>
+
+  <!-- 邮箱修改 -->
+  <div class="profile-section">
+    <div class="profile-menu">
+      <div class="settings-field">
+        <div class="settings-field-label">当前邮箱</div>
+        <div class="settings-field-row">
+          <span class="settings-field-value" id="emailDisplay"><%= user.email || '未设置' %></span>
+          <button class="btn btn-xs btn-ghost" id="emailEditBtn" onclick="toggleEmailEdit()">修改</button>
+        </div>
+        <div class="settings-field-edit" id="emailEditArea" style="display:none">
+          <input type="email" class="input" id="emailInput" placeholder="请输入新邮箱地址" maxlength="120" style="margin-bottom:8px">
+          <div id="emailCodeArea" style="display:none">
+            <input type="text" class="input" id="emailCodeInput" placeholder="请输入6位验证码" maxlength="6" style="width:160px">
+            <button class="btn btn-xs btn-ghost" id="emailCodeBtn" onclick="sendEmailCode()" style="margin-left:8px">获取验证码</button>
+            <span id="emailCodeCountdown" style="color:#a8a39a;font-size:12px;margin-left:8px;display:none"></span>
+          </div>
+          <div class="settings-field-actions" style="margin-top:8px">
+            <button class="btn btn-xs" onclick="cancelEmailEdit()">取消</button>
+            <button class="btn btn-xs btn-primary" id="emailSaveBtn" onclick="saveEmail()">保存</button>
+          </div>
+        </div>
+        <div id="emailError" class="form-error" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 安全与通知 -->
+  <div class="profile-section">
+    <div class="profile-menu">
+      <a href="/profile/password" class="profile-menu-item">
+        <span class="menu-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <span style="flex:1">修改密码</span>
+        <span class="menu-arrow">&#8250;</span>
+      </a>
+      <div class="profile-menu-item" style="justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="menu-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
+          <span>邮件通知</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="emailNotifyToggle" <%= user.email_notify ? 'checked' : '' %> onchange="toggleEmailNotify()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- 关于 -->
+  <div class="profile-section">
+    <div class="profile-menu">
+      <div class="profile-menu-item">
+        <span class="menu-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+        <span style="flex:1">版本</span>
+        <span class="menu-badge">v2.3</span>
+      </div>
+      <a href="/about/terms" class="profile-menu-item">
+        <span class="menu-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
+        <span style="flex:1">用户协议</span>
+        <span class="menu-arrow">&#8250;</span>
+      </a>
+      <a href="/about/privacy" class="profile-menu-item">
+        <span class="menu-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+        <span style="flex:1">隐私政策</span>
+        <span class="menu-arrow">&#8250;</span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+var emailOriginal = '<%= user.email || "" %>';
+
+function toggleEmailEdit() {
+  document.getElementById('emailEditArea').style.display = 'block';
+  document.getElementById('emailEditBtn').style.display = 'none';
+  document.getElementById('emailCodeArea').style.display = '';
+  document.getElementById('emailInput').value = '';
+  document.getElementById('emailCodeInput').value = '';
+  document.getElementById('emailInput').focus();
+  document.getElementById('emailError').style.display = 'none';
+}
+
+function cancelEmailEdit() {
+  document.getElementById('emailEditArea').style.display = 'none';
+  document.getElementById('emailEditBtn').style.display = '';
+  document.getElementById('emailError').style.display = 'none';
+}
+
+function sendEmailCode() {
+  var email = document.getElementById('emailInput').value.trim();
+  var btn = document.getElementById('emailCodeBtn');
+  var errEl = document.getElementById('emailError');
+
+  errEl.style.display = 'none';
+
+  if (!email) {
+    errEl.textContent = '请先输入邮箱地址';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+
+  fetch('/api/auth/send-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email, purpose: 'change_email' })
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      btn.disabled = false;
+      btn.textContent = '获取验证码';
+      if (result.ok) {
+        showToast('验证码已发送', 'success');
+        // 开始倒计时
+        startEmailCountdown(60);
+      } else {
+        errEl.textContent = result.data.error || '发送失败';
+        errEl.style.display = 'block';
+      }
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = '获取验证码';
+      errEl.textContent = '网络错误，请重试';
+      errEl.style.display = 'block';
+    });
+}
+
+function startEmailCountdown(seconds) {
+  var span = document.getElementById('emailCodeCountdown');
+  var btn = document.getElementById('emailCodeBtn');
+  btn.style.display = 'none';
+  span.style.display = '';
+  var timer = setInterval(function() {
+    seconds--;
+    span.textContent = seconds + 's 后可重发';
+    if (seconds <= 0) {
+      clearInterval(timer);
+      span.style.display = 'none';
+      btn.style.display = '';
+    }
+  }, 1000);
+}
+
+function saveEmail() {
+  var email = document.getElementById('emailInput').value.trim();
+  var code = document.getElementById('emailCodeInput').value.trim();
+  var btn = document.getElementById('emailSaveBtn');
+  var errEl = document.getElementById('emailError');
+
+  errEl.style.display = 'none';
+
+  if (!email) {
+    errEl.textContent = '请输入邮箱地址';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (!code) {
+    errEl.textContent = '请先获取并输入验证码';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+
+  fetch('/api/auth/email', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email, code: code })
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      btn.disabled = false;
+      btn.textContent = '保存';
+      if (result.ok) {
+        document.getElementById('emailDisplay').textContent = result.data.user.email || '未设置';
+        document.getElementById('emailEditArea').style.display = 'none';
+        document.getElementById('emailEditBtn').style.display = '';
+        showToast('邮箱已更新', 'success');
+      } else {
+        errEl.textContent = result.data.error || '保存失败';
+        errEl.style.display = 'block';
+      }
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = '保存';
+      errEl.textContent = '网络错误，请重试';
+      errEl.style.display = 'block';
+    });
+}
+
+function toggleEmailNotify() {
+  var checked = document.getElementById('emailNotifyToggle').checked;
+  fetch('/api/auth/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email_notify: checked })
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      showToast(checked ? '邮件通知已开启' : '邮件通知已关闭', 'success');
+    })
+    .catch(function() {
+      // 回滚
+      document.getElementById('emailNotifyToggle').checked = !checked;
+      showToast('设置失败，请重试', 'error');
+    });
+}
+</script>

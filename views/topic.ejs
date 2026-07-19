@@ -1,0 +1,304 @@
+<div class="container">
+  <a href="javascript:void(0)" class="back-link" onclick="(function(){if(window.history.length>1)history.back();else location.href='/category/<%= topic.category_id %>';})()">← 返回</a>
+
+  <div class="topic-card-detail">
+    <h1 class="topic-title">
+      <%= topic.title %>
+      <% if (topic.is_pinned) { %><span class="badge badge-pin">置顶</span><% } %>
+      <% if (topic.is_essence) { %><span class="badge badge-essence">精华</span><% } %>
+    </h1>
+    <div class="topic-meta">
+      <% if (topic.username) { %>
+        <a href="/user/<%= topic.author_user_id %>" class="author-link"><%= topic.nickname || topic.username %></a>
+      <% } else { %>
+        <span class="deleted-user">已注销用户</span>
+      <% } %>
+      <span class="post-dot"></span>
+      <span class="meta-badge"><%= topic.view_count %> 阅读</span>
+      <span class="post-dot"></span>
+      <time class="meta-time"><%= topic.created_at %></time>
+    </div>
+
+    <div class="topic-body"><%- topic.contentHTML %></div>
+
+    <div class="topic-actions">
+      <div class="topic-actions-group">
+        <button class="btn-action btn-action-like" id="topicLikeBtn" onclick="toggleTopicLike()">赞 (<%= topic.like_count %>)</button>
+      </div>
+      <% if (user && user.role === 'admin') { %>
+      <div class="topic-actions-group">
+        <button class="btn-action <%= topic.is_pinned ? 'btn-action-active' : '' %>" id="pinBtn" onclick="togglePin()"><%= topic.is_pinned ? '已置顶' : '置顶' %></button>
+        <button class="btn-action <%= topic.is_essence ? 'btn-action-active' : '' %>" id="essenceBtn" onclick="toggleEssence()"><%= topic.is_essence ? '已加精' : '加精' %></button>
+      </div>
+      <% } %>
+      <% if (user && (user.id === topic.user_id || user.role === 'admin')) { %>
+      <div class="topic-actions-group">
+        <a href="/topic/<%= topic.id %>/edit" class="btn-action">编辑</a>
+        <button class="btn-action btn-action-danger" onclick="deleteTopic()">删除</button>
+      </div>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="reply-section">
+    <div class="section-label">回复 (<span id="replyCount2"><%= topic.reply_count %></span>)</div>
+    <div class="reply-list" id="replyList"></div>
+    <div id="replyPagination"></div>
+
+    <% if (user) { %>
+      <% if (categoryReplyRestricted && user.role !== 'admin') { %>
+        <p class="login-tip">本版块仅管理员可回复</p>
+      <% } else { %>
+      <form id="replyForm" class="form form-reply" onsubmit="submitReply(event)">
+        <div class="form-group">
+          <textarea id="replyContent" class="input textarea" rows="3" required placeholder="写下你的回复..."></textarea>
+        </div>
+        <div id="replyError" class="form-error" style="display:none"></div>
+        <button type="submit" class="btn btn-primary">回复</button>
+      </form>
+      <% } %>
+    <% } else { %>
+      <p class="login-tip"><a href="/login">登录</a>后参与回复</p>
+    <% } %>
+  </div>
+</div>
+
+<script>
+(function() {
+  var topicId = '<%= topic.id %>';
+  var currentUser = <%- JSON.stringify(typeof user !== 'undefined' ? user : null) %>;
+  var replyPage = 1;
+  var replyPageSize = (window.SITE_CONFIG && window.SITE_CONFIG.pageSize) || 20;
+
+  function formatTime(dt) {
+    if (!dt) return '';
+    var d = new Date(dt.replace(' ', 'T'));
+    var now = new Date();
+    var diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+    if (diff < 2592000) return Math.floor(diff / 86400) + ' 天前';
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+  }
+
+  var avatarColors = ['#6366f1','#8b5cf6','#ec4899','#f97316','#06b6d4','#10b981'];
+
+  function authorHTML(u, replyId) {
+    if (!u || !u.username) return '<span class="deleted-user">已注销用户</span>';
+    if (u.avatar) {
+      return '<img class="reply-avatar-img" src="' + escapeHTMLAttr(u.avatar) + '" alt="" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+        '<span class="text-avatar reply-avatar-fallback" style="display:none;background:' + avatarColors[replyId % avatarColors.length] + '">' + escapeHTML((u.nickname || u.username).charAt(0)) + '</span>' +
+        '<a href="/user/' + u.author_user_id + '" class="author-link">' + escapeHTML(u.nickname || u.username) + '</a>';
+    }
+    var c = avatarColors[replyId % avatarColors.length];
+    return '<span class="text-avatar" style="background:' + c + '">' + escapeHTML((u.nickname || u.username).charAt(0)) + '</span>' +
+      '<a href="/user/' + u.author_user_id + '" class="author-link">' + escapeHTML(u.nickname || u.username) + '</a>';
+  }
+
+  function escapeHTML(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function escapeHTMLAttr(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function renderReplyContent(text) {
+    return DOMPurify.sanitize(marked.parse(text || ''));
+  }
+
+  function fetchJSON(url, opts) {
+    return fetch(url, opts).then(function(r) {
+      return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+    });
+  }
+
+  function getReplyLikeClass(replyId) {
+    if (window._replyLikedState && window._replyLikedState[replyId]) return ' btn-liked';
+    return '';
+  }
+
+  function loadReplies() {
+    fetchJSON('/api/topics/' + topicId + '/replies?page=' + replyPage + '&pageSize=' + replyPageSize)
+      .then(function(result) {
+        if (!result.ok) return;
+        renderReplies(result.data);
+      });
+  }
+
+  function renderReplies(data) {
+    var html = '';
+    data.replies.forEach(function(r) {
+      var editDelBtns = '';
+      if (currentUser && (currentUser.id === r.user_id || currentUser.role === 'admin')) {
+        editDelBtns = '<button class="btn btn-xs btn-ghost" onclick="editReply(' + r.id + ')">编辑</button>' +
+          '<button class="btn btn-xs btn-ghost-danger" onclick="deleteReply(' + r.id + ')">删除</button>';
+      }
+      html += '<div class="reply-item stagger-in" id="reply-' + r.id + '">' +
+        '<div class="reply-header">' +
+          authorHTML(r, r.id) +
+          '<span class="post-dot"></span>' +
+          '<span class="reply-time">' + formatTime(r.created_at) + '</span>' +
+          (r.updated_at !== r.created_at ? '<span class="post-dot"></span><span class="reply-edited">已编辑</span>' : '') +
+          '<span class="reply-floor">#' + r.floor + '</span>' +
+        '</div>' +
+        '<div class="reply-body">' + renderReplyContent(r.content) + '</div>' +
+        '<div class="reply-actions">' +
+          '<button class="btn btn-xs' + getReplyLikeClass(r.id) + '" onclick="toggleReplyLike(' + r.id + ')">赞 (' + r.like_count + ')</button>' +
+          editDelBtns +
+        '</div>' +
+      '</div>';
+    });
+
+    if (data.replies.length === 0) {
+      html = '<div class="empty-card">' +
+        '<svg class="empty-card-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>' +
+        '<p>暂无回复</p>' +
+        '<span>来坐沙发吧</span>' +
+        '</div>';
+    }
+
+    document.getElementById('replyList').innerHTML = html;
+
+    var pagHtml = '';
+    if (data.totalPages > 1) {
+      pagHtml += '<div class="pagination">';
+      if (replyPage > 1) {
+        pagHtml += '<a href="javascript:void(0)" class="page-btn" onclick="replyPage=' + (replyPage - 1) + ';loadReplies();window.scrollTo(0,document.getElementById(\'replyList\').offsetTop)">&laquo; 上一页</a>';
+      }
+      pagHtml += '<span class="page-info">第 ' + replyPage + ' / ' + data.totalPages + ' 页</span>';
+      if (replyPage < data.totalPages) {
+        pagHtml += '<a href="javascript:void(0)" class="page-btn" onclick="replyPage=' + (replyPage + 1) + ';loadReplies();window.scrollTo(0,document.getElementById(\'replyList\').offsetTop)">下一页 &raquo;</a>';
+      }
+      pagHtml += '</div>';
+    }
+    document.getElementById('replyPagination').innerHTML = pagHtml;
+  }
+
+  window.toggleTopicLike = function() {
+    console.log('[DEBUG] toggleTopicLike called, currentUser:', currentUser);
+    if (!currentUser) { location.href = '/login'; return; }
+    fetchJSON('/api/topics/' + topicId + '/like', { method: 'POST' }).then(function(result) {
+      console.log('[DEBUG] toggleTopicLike response:', result);
+      if (result.ok) {
+        var btn = document.getElementById('topicLikeBtn');
+        btn.textContent = '赞 (' + result.data.like_count + ')';
+        if (result.data.liked) { btn.classList.add('btn-liked'); }
+        else { btn.classList.remove('btn-liked'); }
+        btn.classList.remove('like-bounce');
+        void btn.offsetWidth;
+        btn.classList.add('like-bounce');
+      }
+    }).catch(function(err) {
+      console.error('[DEBUG] toggleTopicLike fetch error:', err);
+    });
+  };
+
+  window.toggleReplyLike = function(replyId) {
+    if (!currentUser) { location.href = '/login'; return; }
+    fetchJSON('/api/replies/' + replyId + '/like', { method: 'POST' }).then(function(r) {
+      if (r.ok) {
+        if (!window._replyLikedState) window._replyLikedState = {};
+        window._replyLikedState[replyId] = r.data.liked;
+        loadReplies();
+      }
+    });
+  };
+
+  window.togglePin = function() {
+    fetchJSON('/api/topics/' + topicId + '/pin', { method: 'PUT' }).then(function(r) {
+      if (r.ok) {
+        var btn = document.getElementById('pinBtn');
+        if (btn.classList.contains('btn-action-active')) {
+          btn.classList.remove('btn-action-active');
+          btn.textContent = '置顶';
+        } else {
+          btn.classList.add('btn-action-active');
+          btn.textContent = '已置顶';
+        }
+      }
+    });
+  };
+  window.toggleEssence = function() {
+    fetchJSON('/api/topics/' + topicId + '/essence', { method: 'PUT' }).then(function(r) {
+      if (r.ok) {
+        var btn = document.getElementById('essenceBtn');
+        if (btn.classList.contains('btn-action-active')) {
+          btn.classList.remove('btn-action-active');
+          btn.textContent = '加精';
+        } else {
+          btn.classList.add('btn-action-active');
+          btn.textContent = '已加精';
+        }
+      }
+    });
+  };
+
+  window.deleteTopic = function() {
+    showConfirm('确定删除此帖子？', { title: '删除帖子', danger: true, confirmText: '删除' })
+      .then(function(ok) { if (!ok) return;
+    fetchJSON('/api/topics/' + topicId, { method: 'DELETE' }).then(function(r) {
+      if (r.ok) { sessionStorage.setItem('toast_msg', '帖子已删除'); location.href = '/'; }
+      else { showToast(r.data.error, 'error'); }
+    });
+    });
+  };
+
+  window.submitReply = function(e) {
+    e.preventDefault();
+    var content = document.getElementById('replyContent').value.trim();
+    if (!content) return;
+    var errEl = document.getElementById('replyError');
+    fetchJSON('/api/topics/' + topicId + '/replies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: content }),
+    }).then(function(result) {
+      if (result.ok) {
+        document.getElementById('replyContent').value = '';
+        errEl.style.display = 'none';
+        replyPage = 1;
+        loadReplies();
+      } else {
+        errEl.textContent = result.data.error || '回复失败';
+        errEl.style.display = 'block';
+      }
+    });
+  };
+
+  window.editReply = function(replyId) {
+    var replyEl = document.getElementById('reply-' + replyId);
+    var oldContent = replyEl.querySelector('.reply-body').textContent;
+    var newContent = prompt('编辑回复：', oldContent);
+    if (!newContent || !newContent.trim()) return;
+    fetchJSON('/api/replies/' + replyId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: newContent.trim() }),
+    }).then(function(r) {
+      if (r.ok) loadReplies();
+      else showToast(r.data.error, 'error');
+    });
+  };
+
+  window.deleteReply = function(replyId) {
+    showConfirm('确定删除此回复？', { title: '删除回复', danger: true, confirmText: '删除' })
+      .then(function(ok) { if (!ok) return;
+    fetchJSON('/api/replies/' + replyId, { method: 'DELETE' }).then(function(r) {
+      if (r.ok) { showToast('回复已删除', 'success'); loadReplies(); }
+      else showToast(r.data.error, 'error');
+    });
+    });
+  };
+
+  document.addEventListener('DOMContentLoaded', loadReplies);
+})();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" defer></script>

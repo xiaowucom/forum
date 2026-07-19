@@ -1,0 +1,11 @@
+<header class="site-header">
+  <div class="header-inner">
+    <a href="/" class="site-logo"><%= settings.site_name %></a>
+    <nav class="site-nav">
+      <a href="/search" class="nav-link search-btn" title="搜索">🔍</a>
+      <% if (!user) { %>
+        <a href="/login" class="btn btn-sm header-login-btn">登录</a>
+      <% } %>
+    </nav>
+  </div>
+</header>

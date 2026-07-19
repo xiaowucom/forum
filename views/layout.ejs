@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title><%= typeof title !== 'undefined' ? title + ' - ' : '' %><%= settings.site_name %></title>
+  <link rel="stylesheet" href="/style.css">
+  <script>
+  window.SITE_CONFIG = { pageSize: <%- settings.page_size %> };
+  </script>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main class="main-content<% if (body && body.startsWith('admin/')) { %> main-content--no-tab<% } %>">
+    <% if (body && body.startsWith('admin/')) { %>
+    <div class="admin-top-bar">
+      <a href="/" class="admin-back-link">&#8592; 返回前台</a>
+      <span class="admin-top-title">管理后台</span>
+    </div>
+    <% } %>
+    <%- include(body) %>
+  </main>
+  <% if (!body || !body.startsWith('admin/')) { %>
+  <%- include('partials/tabbar') %>
+  <% } %>
+  <%- include('partials/footer') %>
+  <div class="toast-container" id="toastContainer"></div>
+  <script>
+  // ========== Toast ==========
+  (function() {
+    var container = document.getElementById('toastContainer');
+    window.showToast = function(message, type) {
+      type = type || 'success';
+      var el = document.createElement('div');
+      el.className = 'toast-item toast-' + type;
+      el.textContent = message;
+      container.appendChild(el);
+      setTimeout(function() {
+        el.classList.add('toast-out');
+        el.addEventListener('animationend', function() {
+          if (el.parentNode) el.parentNode.removeChild(el);
+        });
+      }, 2500);
+    };
+  })();
+
+  // ========== Cross-page Toast ==========
+  (function() {
+    var msg = sessionStorage.getItem('toast_msg');
+    if (msg) {
+      sessionStorage.removeItem('toast_msg');
+      // 等 DOM 就绪后展示
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() { showToast(msg, 'success'); });
+      } else {
+        showToast(msg, 'success');
+      }
+    }
+  })();
+
+  // ========== Confirm Modal ==========
+  window.showConfirm = function(message, options) {
+    options = options || {};
+    var title = options.title || '确认操作';
+    var confirmText = options.confirmText || '确定';
+    var cancelText = options.cancelText || '取消';
+    var danger = options.danger || false;
+
+    return new Promise(function(resolve) {
+      var overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      var confirmCls = danger ? ' btn-danger' : ' btn-primary';
+      overlay.innerHTML =
+        '<div class="modal-content' + (danger ? ' modal-confirm-danger' : '') + '">' +
+          '<div class="modal-title">' + title + '</div>' +
+          '<div class="modal-body-text">' + message + '</div>' +
+          '<div class="modal-actions">' +
+            '<button id="confirmCancelBtn" class="btn btn-ghost">' + cancelText + '</button>' +
+            '<button id="confirmOkBtn" class="btn' + confirmCls + '">' + confirmText + '</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+
+      var okBtn = document.getElementById('confirmOkBtn');
+      var cancelBtn = document.getElementById('confirmCancelBtn');
+
+      function cleanup() {
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity .15s ease';
+        setTimeout(function() {
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }, 160);
+      }
+
+      okBtn.addEventListener('click', function() { cleanup(); resolve(true); });
+      cancelBtn.addEventListener('click', function() { cleanup(); resolve(false); });
+      overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) { cleanup(); resolve(false); }
+      });
+
+      // Auto-focus OK button
+      setTimeout(function() { okBtn.focus(); }, 50);
+    });
+  };
+  </script>
+</body>
+</html>

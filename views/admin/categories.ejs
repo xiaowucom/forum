@@ -1,0 +1,227 @@
+<div class="container">
+  <h1 class="page-title">版块管理</h1>
+  <div class="admin-nav">
+    <a href="/admin" class="admin-nav-link">概览</a>
+    <a href="/admin/users" class="admin-nav-link">用户管理</a>
+    <a href="/admin/categories" class="admin-nav-link active">版块管理</a>
+    <a href="/admin/messages" class="admin-nav-link">系统消息</a>
+    <a href="/admin/topics" class="admin-nav-link">帖子管理</a>
+    <a href="/admin/settings" class="admin-nav-link">设置</a>
+    <a href="/admin/logs" class="admin-nav-link">日志中心</a>
+  </div>
+
+  <div id="catError" class="form-error" style="display:none"></div>
+
+  <div class="form" style="margin-bottom:20px">
+    <h3>新建版块</h3>
+    <div class="form-group">
+      <input type="text" id="newCatName" class="input" placeholder="版块名称（1-30 字符）" maxlength="30" style="max-width:400px">
+    </div>
+    <div class="form-group">
+      <input type="text" id="newCatDesc" class="input" placeholder="描述（可选）" style="max-width:400px">
+    </div>
+    <button class="btn btn-primary" onclick="createCategory()">创建</button>
+  </div>
+
+  <div id="catCardList" class="admin-card-list">
+    <div class="empty-state">加载中...</div>
+  </div>
+
+  <!-- 编辑版块弹窗 -->
+  <div class="modal-overlay" id="editModal" style="display:none" onclick="if(event.target===this)closeEditModal()">
+    <div class="modal-content">
+      <h3 class="modal-title">编辑版块</h3>
+      <input type="hidden" id="editCatId">
+      <div class="form-group">
+        <label>版块名称</label>
+        <input type="text" id="editCatName" class="input" maxlength="30">
+      </div>
+      <div class="form-group">
+        <label>描述</label>
+        <input type="text" id="editCatDesc" class="input">
+      </div>
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="editPostRestricted"> 仅管理员可发表帖子
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="editReplyRestricted"> 仅管理员可发表回复
+        </label>
+      </div>
+      <div id="editCatError" class="form-error" style="display:none"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeEditModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveEditCategory()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  function showError(msg) {
+    var el = document.getElementById('catError');
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(function() { el.style.display = 'none'; }, 4000);
+  }
+
+  function fetchJSON(url, opts) {
+    return fetch(url, opts).then(function(r) {
+      return r.json().then(function(d) { return { ok: r.ok, status: r.status, data: d }; });
+    });
+  }
+
+  function escapeHTML(str) {
+    var div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
+  function loadCategories() {
+    fetchJSON('/api/categories').then(function(result) {
+      if (!result.ok) { showError('加载失败'); return; }
+      renderCategories(result.data.categories);
+    }).catch(function() { showError('加载失败，请刷新重试'); });
+  }
+
+  function renderCategories(cats) {
+    var html = '';
+    if (cats.length === 0) {
+      html = '<div class="empty-state">暂无版块</div>';
+    } else {
+      cats.forEach(function(c, idx) {
+        var isFirst = idx === 0;
+        var isLast = idx === cats.length - 1;
+        var sortHtml =
+          '<div class="admin-card-sort">' +
+            '<button class="icon-btn icon-btn-sm" ' + (isFirst ? 'disabled' : 'onclick="moveCategory(' + c.id + ',\'up\')"') + ' title="上移">&uarr;</button>' +
+            '<button class="icon-btn icon-btn-sm" ' + (isLast  ? 'disabled' : 'onclick="moveCategory(' + c.id + ',\'down\')"') + ' title="下移">&darr;</button>' +
+          '</div>';
+
+        var desc = c.description ? escapeHTML(c.description) : '';
+
+        var actions =
+          '<div class="admin-card-actions">' +
+            '<button class="icon-btn" title="编辑" onclick="editCategory(' + c.id + ',\'' + escapeHTML(c.name) + '\',\'' + escapeHTML(c.description || '') + '\')">&#9998;</button>' +
+            '<button class="icon-btn icon-btn-danger" title="删除" onclick="deleteCategory(' + c.id + ',\'' + escapeHTML(c.name) + '\',' + c.topic_count + ')">&times;</button>' +
+          '</div>';
+
+        html +=
+          '<div class="admin-card">' +
+            sortHtml +
+            '<div class="admin-card-body">' +
+              '<div class="admin-card-title">' + escapeHTML(c.name) + '</div>' +
+              '<div class="admin-card-meta">' + (desc ? desc + ' &middot; ' : '') + c.topic_count + ' 帖</div>' +
+            '</div>' +
+            actions +
+          '</div>';
+      });
+    }
+    document.getElementById('catCardList').innerHTML = html;
+  }
+
+  window.moveCategory = function(id, dir) {
+    fetchJSON('/api/categories/reorder', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, direction: dir }),
+    }).then(function(r) {
+      if (r.ok) { renderCategories(r.data.categories); }
+      else { showError(r.data.error); }
+    });
+  };
+
+  window.createCategory = function() {
+    var name = document.getElementById('newCatName').value.trim();
+    var desc = document.getElementById('newCatDesc').value.trim();
+    if (!name) { showError('请输入版块名称'); return; }
+    fetchJSON('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, description: desc }),
+    }).then(function(r) {
+      if (r.ok) {
+        document.getElementById('newCatName').value = '';
+        document.getElementById('newCatDesc').value = '';
+        loadCategories();
+      } else {
+        showError(r.data.error);
+      }
+    });
+  };
+
+  window.editCategory = function(id, oldName, oldDesc) {
+    // Fetch full category data to get restriction flags
+    fetchJSON('/api/categories').then(function(result) {
+      if (!result.ok) { showError('加载版块信息失败'); return; }
+      var cat = result.data.categories.find(function(c) { return c.id === id; });
+      if (!cat) { showError('版块不存在'); return; }
+      document.getElementById('editCatId').value = cat.id;
+      document.getElementById('editCatName').value = cat.name;
+      document.getElementById('editCatDesc').value = cat.description || '';
+      document.getElementById('editPostRestricted').checked = !!cat.post_restricted;
+      document.getElementById('editReplyRestricted').checked = !!cat.reply_restricted;
+      document.getElementById('editModal').style.display = 'flex';
+    }).catch(function() { showError('加载失败'); });
+  };
+
+  window.closeEditModal = function() {
+    document.getElementById('editModal').style.display = 'none';
+    document.getElementById('editCatError').style.display = 'none';
+  };
+
+  window.saveEditCategory = function() {
+    var id = document.getElementById('editCatId').value;
+    var name = document.getElementById('editCatName').value.trim();
+    var desc = document.getElementById('editCatDesc').value.trim();
+    var postRestricted = document.getElementById('editPostRestricted').checked ? 1 : 0;
+    var replyRestricted = document.getElementById('editReplyRestricted').checked ? 1 : 0;
+    var errEl = document.getElementById('editCatError');
+
+    if (!name) {
+      errEl.textContent = '请输入版块名称';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    fetchJSON('/api/categories/' + id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        description: desc,
+        post_restricted: postRestricted,
+        reply_restricted: replyRestricted,
+      }),
+    }).then(function(r) {
+      if (r.ok) {
+        closeEditModal();
+        showToast('版块已更新', 'success');
+        loadCategories();
+      } else {
+        errEl.textContent = r.data.error;
+        errEl.style.display = 'block';
+      }
+    });
+  };
+
+  window.deleteCategory = function(id, name, topicCount) {
+    if (topicCount > 0) {
+      showError('该版块下还有 ' + topicCount + ' 个帖子，无法删除');
+      return;
+    }
+    showConfirm('确定删除版块「' + name + '」？', { title: '删除版块', danger: true, confirmText: '删除' })
+      .then(function(ok) { if (!ok) return;
+    fetchJSON('/api/categories/' + id, { method: 'DELETE' }).then(function(r) {
+      if (r.ok) { showToast('版块已删除', 'success'); loadCategories(); }
+      else { showError(r.data.error); }
+    });
+    });
+  };
+
+  loadCategories();
+})();
+</script>

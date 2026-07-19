@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.db
+*.db-shm
+*.db-wal
+public/uploads/avatars/*
+!public/uploads/avatars/.gitkeep
+*.backup-*
+*.backup
+

@@ -1,0 +1,274 @@
+<div class="container">
+  <div class="admin-nav">
+    <a href="/admin" class="admin-nav-link">概览</a>
+    <a href="/admin/users" class="admin-nav-link">用户管理</a>
+    <a href="/admin/categories" class="admin-nav-link">版块管理</a>
+    <a href="/admin/messages" class="admin-nav-link">系统消息</a>
+    <a href="/admin/topics" class="admin-nav-link active">帖子管理</a>
+    <a href="/admin/settings" class="admin-nav-link">设置</a>
+    <a href="/admin/logs" class="admin-nav-link">日志中心</a>
+  </div>
+
+  <h1 class="page-title">帖子管理</h1>
+
+  <div class="admin-filter-row">
+    <select id="catFilter" class="input" style="max-width:160px" onchange="filterTopics()">
+      <option value="">全部版块</option>
+    </select>
+    <input type="text" id="searchInput" class="input" style="max-width:240px" placeholder="搜索标题..." oninput="filterTopics()">
+    <span id="totalCount" class="text-muted"></span>
+  </div>
+
+  <div id="topicError" class="form-error" style="display:none"></div>
+
+  <div id="topicCardList" class="admin-card-list">
+    <div class="empty-state">加载中...</div>
+  </div>
+
+  <div id="topicPager" class="pagination" style="display:none"></div>
+</div>
+
+<!-- 移动帖子弹窗 -->
+<div class="modal-overlay" id="moveModal" style="display:none" onclick="if(event.target===this)closeMoveModal()">
+  <div class="modal-content" style="max-width:400px">
+    <h3 class="modal-title">移动帖子</h3>
+    <p id="moveTopicTitle" style="font-size:13px;color:var(--text-muted);margin-bottom:16px"></p>
+    <div class="form-group">
+      <label>目标版块</label>
+      <select id="moveTargetCat" class="input"></select>
+    </div>
+    <div id="moveError" class="form-error" style="display:none"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeMoveModal()">取消</button>
+      <button class="btn btn-primary" id="moveConfirmBtn" onclick="confirmMove()">确认移动</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var currentPage = 1;
+
+  function showError(msg) {
+    var el = document.getElementById('topicError');
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(function() { el.style.display = 'none'; }, 4000);
+  }
+
+  function escapeHTML(str) {
+    var div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
+  function formatTime(t) {
+    if (!t) return '';
+    return t.replace('T', ' ').substring(0, 16);
+  }
+
+  function badge(cls, label) {
+    return '<span class="badge badge-' + cls + '">' + label + '</span>';
+  }
+
+  function loadCategories() {
+    fetch('/api/categories')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var sel = document.getElementById('catFilter');
+        d.categories.forEach(function(c) {
+          var opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.name;
+          sel.appendChild(opt);
+        });
+      }).catch(function() { showError('加载版块列表失败'); });
+  }
+
+  function loadTopics(page) {
+    var catId = document.getElementById('catFilter').value;
+    var search = document.getElementById('searchInput').value.trim();
+    var params = '?page=' + (page || 1) + '&pageSize=' + ((window.SITE_CONFIG && window.SITE_CONFIG.pageSize) || 20);
+    if (catId) params += '&category_id=' + catId;
+    if (search) params += '&search=' + encodeURIComponent(search);
+
+    fetch('/api/admin/topics' + params)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        document.getElementById('totalCount').textContent = '共 ' + d.total + ' 条';
+        renderTopics(d.topics);
+        renderPager(d);
+      })
+      .catch(function() { showError('加载失败'); });
+  }
+
+  function renderTopics(topics) {
+    var html = '';
+    if (topics.length === 0) {
+      html = '<div class="empty-state">暂无帖子</div>';
+    } else {
+      topics.forEach(function(t) {
+        var tags = [];
+        if (t.is_pinned) tags.push(badge('pinned', '置顶'));
+        if (t.is_essence) tags.push(badge('essence', '精华'));
+
+        var titleHtml = '<a href="/topic/' + t.id + '" target="_blank">' + escapeHTML(t.title) + '</a>';
+        if (tags.length) titleHtml += ' ' + tags.join(' ');
+
+        var metaParts = [];
+        metaParts.push(t.username ? '<a href="/user/' + t.author_user_id + '" class="author-link">' + escapeHTML(t.nickname || t.username) + '</a>' + (t.nickname && t.nickname !== t.username ? ' <span class="text-muted">(' + escapeHTML(t.username) + ')</span>' : '') : '<span class="text-muted">已删除</span>');
+        metaParts.push(escapeHTML(t.category_name || '-'));
+        metaParts.push(t.reply_count + ' 回复');
+        var metaHtml = metaParts.join(' &middot; ');
+
+        var timeHtml = formatTime(t.created_at);
+
+        var pinTitle = t.is_pinned ? '取消置顶' : '置顶';
+        var essenceTitle = t.is_essence ? '取消精华' : '加精';
+        var pinActive = t.is_pinned ? ' active' : '';
+        var essenceActive = t.is_essence ? ' active' : '';
+
+        var actions =
+          '<button class="icon-btn' + pinActive + '" title="' + pinTitle + '" onclick="togglePin(' + t.id + ',' + t.is_pinned + ')">&#9678;</button>' +
+          '<button class="icon-btn' + essenceActive + '" title="' + essenceTitle + '" onclick="toggleEssence(' + t.id + ',' + t.is_essence + ')">&starf;</button>' +
+          '<button class="icon-btn" title="移动" onclick="openMoveModal(' + t.id + ',' + t.category_id + ',\'' + escapeHTML(t.title) + '\')">&#8594;</button>' +
+          '<button class="icon-btn icon-btn-danger" title="删除" onclick="deleteTopic(' + t.id + ',\'' + escapeHTML(t.title) + '\')">&times;</button>';
+
+        html +=
+          '<div class="admin-card">' +
+            '<div class="admin-card-body">' +
+              '<div class="admin-card-title">' + titleHtml + '</div>' +
+              '<div class="admin-card-meta">' + metaHtml + '</div>' +
+              '<div class="admin-card-meta">' + timeHtml + '</div>' +
+            '</div>' +
+            '<div class="admin-card-actions">' + actions + '</div>' +
+          '</div>';
+      });
+    }
+    document.getElementById('topicCardList').innerHTML = html;
+  }
+
+  function renderPager(d) {
+    var el = document.getElementById('topicPager');
+    if (d.totalPages <= 1) { el.style.display = 'none'; return; }
+    var html = '';
+    for (var i = 1; i <= d.totalPages; i++) {
+      html += '<button class="page-btn' + (i === d.page ? ' active' : '') + '" onclick="goPage(' + i + ')">' + i + '</button>';
+    }
+    el.innerHTML = html;
+    el.style.display = 'flex';
+    el.style.marginTop = '16px';
+  }
+
+  window.filterTopics = function() {
+    currentPage = 1;
+    loadTopics(1);
+  };
+
+  window.goPage = function(p) {
+    currentPage = p;
+    loadTopics(p);
+  };
+
+  window.togglePin = function(id, current) {
+    fetch('/api/topics/' + id + '/pin', { method: 'PUT' })
+      .then(function(r) { return r.json(); })
+      .then(function() { loadTopics(currentPage); })
+      .catch(function() { showError('操作失败'); });
+  };
+
+  window.toggleEssence = function(id, current) {
+    fetch('/api/topics/' + id + '/essence', { method: 'PUT' })
+      .then(function(r) { return r.json(); })
+      .then(function() { loadTopics(currentPage); })
+      .catch(function() { showError('操作失败'); });
+  };
+
+  window.deleteTopic = function(id, title) {
+    showConfirm('确定删除帖子「' + title + '」？\n\n删除后帖子及所有回复将被永久移除，不可恢复。', { title: '删除帖子', danger: true, confirmText: '删除' })
+      .then(function(ok) { if (!ok) return;
+    fetch('/api/topics/' + id, { method: 'DELETE' })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+      .then(function(result) {
+        if (result.ok) { showToast('帖子已删除', 'success'); loadTopics(currentPage); }
+        else { showError(result.data.error || '删除失败'); }
+      })
+      .catch(function() { showError('删除失败'); });
+    });
+  };
+
+  // 移动帖子
+  var moveTopicId = null;
+  var moveCurrentCatId = null;
+
+  window.openMoveModal = function(id, currentCatId, title) {
+    moveTopicId = id;
+    moveCurrentCatId = currentCatId;
+    document.getElementById('moveTopicTitle').textContent = '「' + title + '」';
+    document.getElementById('moveError').style.display = 'none';
+    document.getElementById('moveConfirmBtn').disabled = false;
+
+    var sel = document.getElementById('moveTargetCat');
+    sel.innerHTML = '';
+    // 从已加载的版块列表构建下拉框
+    var catFilter = document.getElementById('catFilter');
+    for (var i = 0; i < catFilter.options.length; i++) {
+      var opt = catFilter.options[i];
+      if (opt.value === '') continue; // 跳过「全部版块」
+      var newOpt = document.createElement('option');
+      newOpt.value = opt.value;
+      newOpt.textContent = opt.textContent;
+      if (Number(opt.value) === currentCatId) newOpt.disabled = true;
+      sel.appendChild(newOpt);
+    }
+
+    document.getElementById('moveModal').style.display = 'flex';
+  };
+
+  window.closeMoveModal = function() {
+    document.getElementById('moveModal').style.display = 'none';
+  };
+
+  window.confirmMove = function() {
+    var newCatId = document.getElementById('moveTargetCat').value;
+    if (!newCatId) {
+      document.getElementById('moveError').textContent = '请选择目标版块';
+      document.getElementById('moveError').style.display = 'block';
+      return;
+    }
+
+    var btn = document.getElementById('moveConfirmBtn');
+    btn.disabled = true;
+    btn.textContent = '移动中...';
+    document.getElementById('moveError').style.display = 'none';
+
+    fetch('/api/admin/topics/' + moveTopicId + '/move', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_id: Number(newCatId) }),
+    })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+      .then(function(result) {
+        if (result.ok) {
+          showToast('已移动', 'success');
+          closeMoveModal();
+          loadTopics(currentPage);
+        } else {
+          document.getElementById('moveError').textContent = result.data.error || '移动失败';
+          document.getElementById('moveError').style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = '确认移动';
+        }
+      })
+      .catch(function() {
+        document.getElementById('moveError').textContent = '网络错误';
+        document.getElementById('moveError').style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '确认移动';
+      });
+  };
+
+  loadCategories();
+  loadTopics(1);
+})();
+</script>

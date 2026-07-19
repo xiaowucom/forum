@@ -1,0 +1,416 @@
+<div class="container">
+  <h1 class="page-title">网站设置</h1>
+  <div class="admin-nav">
+    <a href="/admin" class="admin-nav-link">概览</a>
+    <a href="/admin/users" class="admin-nav-link">用户管理</a>
+    <a href="/admin/categories" class="admin-nav-link">版块管理</a>
+    <a href="/admin/messages" class="admin-nav-link">系统消息</a>
+    <a href="/admin/topics" class="admin-nav-link">帖子管理</a>
+    <a href="/admin/settings" class="admin-nav-link active">设置</a>
+    <a href="/admin/logs" class="admin-nav-link">日志中心</a>
+  </div>
+
+  <div id="globalMsg" style="display:none"></div>
+
+  <div id="settingsTabs" class="settings-tabs">
+    <button class="settings-tab active" data-tab="general">基础设置</button>
+    <button class="settings-tab" data-tab="email">邮件管理</button>
+  </div>
+
+  <!-- 基础设置面板 -->
+  <div id="panel-general" class="settings-panel active">
+    <div id="settingsForm"></div>
+  </div>
+
+  <!-- 邮件管理面板 -->
+  <div id="panel-email" class="settings-panel" style="display:none">
+    <div id="emailContent" class="empty-state" style="padding:40px">加载中...</div>
+  </div>
+
+</div>
+
+<script>
+(function() {
+  // ═══════════════════ 通用工具 ═══════════════════
+  var formEl = document.getElementById('settingsForm');
+  var emailContent = document.getElementById('emailContent');
+  var globalMsg = document.getElementById('globalMsg');
+
+  function showGlobal(msg, type) {
+    globalMsg.textContent = msg;
+    globalMsg.className = type === 'error' ? 'form-error' : 'form-success';
+    globalMsg.style.display = 'block';
+    setTimeout(function() { globalMsg.style.display = 'none'; }, 4000);
+  }
+
+  function showError(msg) { showGlobal(msg, 'error'); }
+  function showSuccess(msg) { showGlobal(msg, 'success'); }
+
+  function escapeHTML(str) {
+    var div = document.createElement('div');
+    div.textContent = String(str || '');
+    return div.innerHTML;
+  }
+
+  // ═══════════════════ 标签页切换 ═══════════════════
+  document.getElementById('settingsTabs').addEventListener('click', function(e) {
+    var tab = e.target.closest('.settings-tab');
+    if (!tab) return;
+    document.querySelectorAll('.settings-tab').forEach(function(t) { t.classList.remove('active'); });
+    tab.classList.add('active');
+    var panelId = tab.dataset.tab;
+    document.querySelectorAll('.settings-panel').forEach(function(p) { p.style.display = 'none'; });
+    document.getElementById('panel-' + panelId).style.display = 'block';
+    if (panelId === 'email') loadEmailPanel();
+  });
+
+  // ═══════════════════ 基础设置 ═══════════════════
+  var types = {};
+  var originalValues = {};
+
+  function loadGeneralSettings() {
+    fetch('/api/admin/settings')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        types = d.types || {};
+        renderGeneralForm(d.settings);
+      })
+      .catch(function() { formEl.innerHTML = '<div class="empty-state">加载失败，请刷新重试</div>'; });
+  }
+
+  var LABELS = {
+    site_name: '网站名称',
+    site_description: '网站描述',
+    site_logo: '网站 Logo',
+    footer_text: '页脚文本',
+    enable_register: '开放注册',
+    enable_new_topic: '开放发帖',
+    enable_reply: '开放回复',
+    enable_notifications: '消息通知',
+    page_size: '每页条数',
+    site_closed: '站点维护',
+    force_verify_email: '强制邮箱验证',
+    enable_password_reset: '找回密码',
+    global_email_notify: '全站邮件通知',
+  };
+
+  var HINTS = {
+    enable_register: '关闭后隐藏注册入口，API 拒绝注册请求',
+    enable_new_topic: '关闭后隐藏发布按钮，API 拒绝发帖请求',
+    enable_reply: '关闭后 API 拒绝回复请求',
+    enable_notifications: '关闭后隐藏消息 Tab，不再产生新通知',
+    site_closed: '开启后仅管理员可访问全站',
+    page_size: '每页帖子/回复的显示数量，范围 5-100',
+    force_verify_email: '开启后注册和修改邮箱都需要邮箱验证码',
+    enable_password_reset: '关闭后隐藏"找回密码"入口',
+    global_email_notify: '关闭后全站不再发送任何邮件通知',
+  };
+
+  function renderGeneralForm(settings) {
+    originalValues = Object.assign({}, settings);
+
+    var generalKeys = ['site_name', 'site_description', 'site_logo', 'footer_text'];
+    var featureKeys = ['enable_register', 'enable_new_topic', 'enable_reply', 'enable_notifications', 'force_verify_email', 'enable_password_reset', 'global_email_notify'];
+    var moreKeys = ['page_size', 'site_closed'];
+
+    var html = '';
+
+    // 基础信息
+    html += '<div class="settings-section"><h3 class="settings-section-title">基础信息</h3>';
+    for (var i = 0; i < generalKeys.length; i++) {
+      var key = generalKeys[i];
+      var val = settings[key] || '';
+      html += '<div class="settings-row">';
+      html += '<label class="settings-label">' + LABELS[key] + '</label>';
+
+      if (key === 'site_logo') {
+        html += renderLogoField(key, val);
+      } else {
+        html += '<input type="text" class="input" name="' + key + '" value="' + escapeHTML(val) + '" style="max-width:400px">';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // 功能开关
+    html += '<div class="settings-section"><h3 class="settings-section-title">功能开关</h3>';
+    for (var j = 0; j < featureKeys.length; j++) {
+      var fk = featureKeys[j];
+      var fv = settings[fk] || '';
+      var checked = fv === 'true' ? ' checked' : '';
+      html += '<div class="settings-row">';
+      html += '<label class="settings-label">' + LABELS[fk] + '</label>';
+      html += '<label class="toggle-switch">';
+      html += '<input type="checkbox" name="' + fk + '" value="true"' + checked + ' onchange="markDirty()">';
+      html += '<span class="toggle-slider"></span>';
+      html += '</label>';
+      html += '<span class="settings-hint">' + (HINTS[fk] || '') + '</span>';
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // 通用设置
+    html += '<div class="settings-section"><h3 class="settings-section-title">通用设置</h3>';
+    for (var k = 0; k < moreKeys.length; k++) {
+      var mk = moreKeys[k];
+      var mv = settings[mk] || '';
+      var mtype = types[mk] || 'string';
+      html += '<div class="settings-row">';
+      html += '<label class="settings-label">' + LABELS[mk] + '</label>';
+      if (mtype === 'boolean') {
+        var checked2 = mv === 'true' ? ' checked' : '';
+        html += '<label class="toggle-switch">';
+        html += '<input type="checkbox" name="' + mk + '" value="true"' + checked2 + ' onchange="markDirty()">';
+        html += '<span class="toggle-slider"></span>';
+        html += '</label>';
+        html += '<span class="settings-hint">' + (HINTS[mk] || '') + '</span>';
+      } else {
+        html += '<input type="number" class="input" name="' + mk + '" value="' + escapeHTML(mv) + '" style="max-width:100px">';
+        html += '<span class="settings-hint">' + (HINTS[mk] || '') + '</span>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+
+    html += '<div class="settings-actions">';
+    html += '<button class="btn btn-primary btn-lg" id="saveBtn" disabled onclick="saveGeneralSettings()">保存设置</button>';
+    html += '</div>';
+
+    formEl.innerHTML = html;
+  }
+
+  // Logo 双模式渲染
+  function renderLogoField(key, val) {
+    var isUrl = !val || val.startsWith('http://') || val.startsWith('https://');
+    var h = '';
+    h += '<div class="logo-field">';
+    // 模式切换
+    h += '<div class="logo-mode-tabs">';
+    h += '<button class="logo-mode-btn' + (isUrl ? ' active' : '') + '" data-mode="url" onclick="switchLogoMode(\'url\')">URL 链接</button>';
+    h += '<button class="logo-mode-btn' + (!isUrl ? ' active' : '') + '" data-mode="upload" onclick="switchLogoMode(\'upload\')">上传图片</button>';
+    h += '</div>';
+    // URL 输入
+    h += '<div class="logo-input logo-url-input"' + (isUrl ? '' : ' style="display:none"') + '>';
+    h += '<input type="text" class="input" name="' + key + '" id="logoUrlInput" value="' + escapeHTML(val) + '" placeholder="https://example.com/logo.png" style="max-width:400px">';
+    h += '<span class="settings-hint">外部图片链接地址</span>';
+    h += '</div>';
+    // 上传模式
+    h += '<div class="logo-input logo-upload-input"' + (isUrl ? ' style="display:none"' : '') + '>';
+    h += '<input type="file" id="logoFileInput" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" onchange="uploadLogoFile()">';
+    h += '<span class="settings-hint">支持 PNG/JPG/GIF/WebP/SVG，最大 2MB</span>';
+    h += '<div id="logoUploadStatus" style="margin-top:6px;font-size:12px"></div>';
+    h += '</div>';
+    // 预览
+    if (val) {
+      h += '<div class="logo-preview" style="margin-top:8px">';
+      h += '<img src="' + escapeHTML(val) + '" alt="Logo 预览" style="max-height:60px;max-width:200px;border:1px solid var(--border);border-radius:4px">';
+      h += '</div>';
+    }
+    h += '<input type="hidden" name="' + key + '_value" id="logoHiddenValue" value="' + escapeHTML(val) + '">';
+    h += '</div>';
+    return h;
+  }
+
+  window.switchLogoMode = function(mode) {
+    document.querySelectorAll('.logo-mode-btn').forEach(function(b) {
+      b.classList.toggle('active', b.dataset.mode === mode);
+    });
+    document.querySelector('.logo-url-input').style.display = mode === 'url' ? '' : 'none';
+    document.querySelector('.logo-upload-input').style.display = mode === 'upload' ? '' : 'none';
+    markDirty();
+  };
+
+  window.uploadLogoFile = function() {
+    var fileInput = document.getElementById('logoFileInput');
+    var statusEl = document.getElementById('logoUploadStatus');
+    var file = fileInput.files[0];
+    if (!file) return;
+
+    statusEl.textContent = '上传中...';
+    statusEl.style.color = 'var(--text-muted)';
+
+    var formData = new FormData();
+    formData.append('logo', file);
+
+    fetch('/api/admin/upload-logo', { method: 'POST', body: formData })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+      .then(function(result) {
+        if (result.ok) {
+          document.getElementById('logoHiddenValue').value = result.data.url;
+          statusEl.textContent = '上传成功: ' + result.data.url;
+          statusEl.style.color = 'var(--admin-accent)';
+          // 更新预览
+          var preview = document.querySelector('.logo-preview');
+          if (preview) {
+            preview.innerHTML = '<img src="' + result.data.url + '" alt="Logo 预览" style="max-height:60px;max-width:200px;border:1px solid var(--border);border-radius:4px">';
+          } else {
+            var div = document.createElement('div');
+            div.className = 'logo-preview';
+            div.style.marginTop = '8px';
+            div.innerHTML = '<img src="' + result.data.url + '" alt="Logo 预览" style="max-height:60px;max-width:200px;border:1px solid var(--border);border-radius:4px">';
+            document.querySelector('.logo-field').appendChild(div);
+          }
+        } else {
+          statusEl.textContent = result.data.error || '上传失败';
+          statusEl.style.color = 'var(--danger)';
+        }
+      })
+      .catch(function() {
+        statusEl.textContent = '网络错误';
+        statusEl.style.color = 'var(--danger)';
+      });
+  };
+
+  window.markDirty = function() {
+    var btn = document.getElementById('saveBtn');
+    if (btn) btn.disabled = false;
+  };
+
+  formEl.addEventListener('input', function() { markDirty(); });
+
+  window.saveGeneralSettings = function() {
+    var inputs = formEl.querySelectorAll('input[name]');
+    var payload = {};
+    for (var i = 0; i < inputs.length; i++) {
+      var el = inputs[i];
+      if (el.type === 'checkbox') {
+        payload[el.name] = el.checked ? 'true' : 'false';
+      } else if (el.type === 'hidden') {
+        payload[el.name.replace('_value', '')] = el.value;
+      } else if (el.type !== 'file') {
+        payload[el.name] = el.value;
+      }
+    }
+
+    // 验证
+    if (payload.site_name && (!payload.site_name.trim() || payload.site_name.trim().length > 50)) {
+      showError('网站名称必须为 1-50 个字符'); return;
+    }
+    var ps = parseInt(payload.page_size, 10);
+    if (isNaN(ps) || ps < 5 || ps > 100) {
+      showError('每页条数必须在 5-100 之间'); return;
+    }
+
+    var btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+
+    fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+      .then(function(result) {
+        btn.textContent = '保存设置';
+        if (result.ok) {
+          originalValues = Object.assign({}, result.data.settings);
+          btn.disabled = true;
+          showSuccess('设置已保存');
+        } else {
+          btn.disabled = false;
+          showError(result.data.error || '保存失败');
+        }
+      })
+      .catch(function() {
+        btn.disabled = false;
+        btn.textContent = '保存设置';
+        showError('网络错误');
+      });
+  };
+
+  // ═══════════════════ 邮件管理面板 ═══════════════════
+  function loadEmailPanel() {
+    fetch('/api/admin/email-status')
+      .then(function(r) { return r.json(); })
+      .then(function(d) { renderEmailPanel(d); })
+      .catch(function() { emailContent.innerHTML = '<div class="empty-state">加载失败</div>'; });
+  }
+
+  function renderEmailPanel(data) {
+    var html = '';
+
+    // SMTP 状态
+    html += '<div class="settings-section"><h3 class="settings-section-title">SMTP 账号状态</h3>';
+    if (data.placeholderMode) {
+      html += '<div class="notification-banner" style="text-align:left">占位模式 — 未配置 SMTP 环境变量，邮件仅打印到控制台日志。</div>';
+    }
+
+    if (data.accounts && data.accounts.length > 0) {
+      data.accounts.forEach(function(acc) {
+        var statusClass = acc.lastError ? 'email-account-warn' : (acc.lastUsedAt ? 'email-account-ok' : 'email-account-idle');
+        html += '<div class="email-account-card ' + statusClass + '">';
+        html += '<div class="email-account-header">';
+        html += '<span class="email-account-label">账号 #' + (acc.index + 1) + '</span>';
+        html += '<span class="email-account-user">' + escapeHTML(acc.user) + '</span>';
+        html += '<span class="email-account-host">' + escapeHTML(acc.host) + '</span>';
+        html += '</div>';
+        html += '<div class="email-account-stats">';
+        html += '<span>成功: <strong>' + acc.successCount + '</strong></span>';
+        html += '<span>失败: <strong>' + acc.failCount + '</strong></span>';
+        html += '<span>最后使用: <strong>' + (acc.lastUsedAt ? new Date(acc.lastUsedAt).toLocaleString('zh-CN') : '从未') + '</strong></span>';
+        html += '</div>';
+        if (acc.lastError) {
+          html += '<div class="email-account-error">最近错误 [' + escapeHTML(acc.lastErrorType || 'Unknown') + ']: ' + escapeHTML(acc.lastError) + '</div>';
+        }
+        if (acc.recentHistory && acc.recentHistory.length > 0) {
+          html += '<div class="email-history">';
+          html += '<span style="font-size:12px;color:var(--text-muted)">最近记录:</span>';
+          acc.recentHistory.slice(0, 5).forEach(function(h) {
+            var icon = h.success ? '&#x2705;' : '&#x274C;';
+            html += '<div class="email-history-item">' + icon + ' ' + escapeHTML(h.category) + ' — ' + escapeHTML(h.message) + ' <span class="text-muted" style="font-size:11px">' + new Date(h.time).toLocaleString('zh-CN') + '</span></div>';
+          });
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+    } else {
+      html += '<div class="empty-state" style="padding:20px">未配置 SMTP 账号</div>';
+    }
+    html += '</div>';
+
+    // 测试发信
+    html += '<div class="settings-section"><h3 class="settings-section-title">测试发信</h3>';
+    html += '<div class="settings-row">';
+    html += '<label class="settings-label">测试收件邮箱</label>';
+    html += '<input type="email" id="testEmail" class="input" placeholder="test@example.com" style="max-width:280px">';
+    html += '<button class="btn btn-primary" onclick="sendTestEmail()" style="margin-left:12px">发送测试邮件</button>';
+    html += '</div>';
+    html += '<div id="emailTestResult" style="margin-top:8px;font-size:13px"></div>';
+    html += '</div>';
+
+    emailContent.innerHTML = html;
+  }
+
+  window.sendTestEmail = function() {
+    var email = document.getElementById('testEmail').value.trim();
+    var resultEl = document.getElementById('emailTestResult');
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      resultEl.innerHTML = '<span style="color:var(--danger)">请输入有效的邮箱地址</span>';
+      return;
+    }
+    resultEl.innerHTML = '发送中...';
+    fetch('/api/admin/email-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email }),
+    })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+      .then(function(result) {
+        if (result.ok) {
+          resultEl.innerHTML = '<span style="color:var(--admin-accent)">' + escapeHTML(result.data.message) + '</span>';
+          // 刷新健康状态
+          if (result.data.health) renderEmailPanel(result.data.health);
+        } else {
+          resultEl.innerHTML = '<span style="color:var(--danger)">' + escapeHTML(result.data.error) + '</span>';
+        }
+      })
+      .catch(function() {
+        resultEl.innerHTML = '<span style="color:var(--danger)">网络错误</span>';
+      });
+  };
+
+  // 初始加载
+  loadGeneralSettings();
+})();
+</script>

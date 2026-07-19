@@ -1,0 +1,106 @@
+<div class="container container-sm">
+  <h1 class="page-title">注册</h1>
+  <form id="registerForm" class="form" onsubmit="handleRegister(event)">
+    <div class="form-group">
+      <label for="username">用户名</label>
+      <input type="text" id="username" name="username" required minlength="3" maxlength="20" autocomplete="username" class="input" placeholder="3-20 个字符，支持中文、字母、数字、下划线">
+    </div>
+    <div class="form-group">
+      <label for="email">邮箱</label>
+      <input type="email" id="email" name="email" required autocomplete="email" class="input" placeholder="your@email.com">
+    </div>
+    <div class="form-group">
+      <label for="password">密码</label>
+      <input type="password" id="password" name="password" required minlength="6" maxlength="32" autocomplete="new-password" class="input" placeholder="6-32 个字符">
+    </div>
+    <div class="form-group">
+      <label for="code">验证码</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="code" name="code" required maxlength="6" class="input" placeholder="6位数字验证码" style="width:140px">
+        <button type="button" class="btn btn-xs btn-ghost" id="sendCodeBtn" onclick="sendRegisterCode()">获取验证码</button>
+        <span id="codeCountdown" style="color:#a8a39a;font-size:12px;display:none"></span>
+      </div>
+    </div>
+    <div id="registerError" class="form-error" style="display:none"></div>
+    <button type="submit" class="btn btn-primary btn-block">注册</button>
+  </form>
+  <p class="form-footer">已有账号？<a href="/login">立即登录</a></p>
+</div>
+
+<script>
+function sendRegisterCode() {
+  var email = document.getElementById('email').value.trim();
+  var btn = document.getElementById('sendCodeBtn');
+  var errEl = document.getElementById('registerError');
+
+  errEl.style.display = 'none';
+
+  if (!email) {
+    errEl.textContent = '请先输入邮箱地址';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+
+  fetch('/api/auth/send-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email, purpose: 'register' })
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      if (result.ok) {
+        // 开始倒计时
+        btn.style.display = 'none';
+        var span = document.getElementById('codeCountdown');
+        span.style.display = '';
+        var seconds = 60;
+        var timer = setInterval(function() {
+          seconds--;
+          span.textContent = seconds + 's 后可重发';
+          if (seconds <= 0) {
+            clearInterval(timer);
+            span.style.display = 'none';
+            btn.style.display = '';
+          }
+        }, 1000);
+      } else {
+        btn.disabled = false;
+        btn.textContent = '获取验证码';
+        errEl.textContent = result.data.error || '发送失败';
+        errEl.style.display = 'block';
+      }
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = '获取验证码';
+      errEl.textContent = '网络错误，请重试';
+      errEl.style.display = 'block';
+    });
+}
+
+function handleRegister(e) {
+  e.preventDefault();
+  var errEl = document.getElementById('registerError');
+  errEl.style.display = 'none';
+  fetch('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: document.getElementById('username').value,
+      email: document.getElementById('email').value,
+      password: document.getElementById('password').value,
+      code: document.getElementById('code').value,
+    }),
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      if (result.ok) {
+        location.href = '/';
+      } else {
+        errEl.textContent = result.data.error || '注册失败';
+        errEl.style.display = 'block';
+      }
+    });
+}
+</script>

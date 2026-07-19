@@ -1,0 +1,31 @@
+<div class="container">
+  <div class="section-label">全部版块</div>
+  <div class="category-grid">
+    <% categories.forEach(function(cat) { %>
+      <a href="/category/<%= cat.id %>" class="category-card stagger-in">
+        <div class="cat-icon"><%= cat.name.charAt(0) %></div>
+        <div class="cat-info">
+          <div class="cat-name-row">
+            <h2 class="cat-name"><%= cat.name %></h2>
+            <% if (cat.description) { %>
+              <span class="cat-desc-inline"><%= cat.description %></span>
+            <% } %>
+          </div>
+          <div class="cat-meta-row">
+            <span class="cat-count-badge"><%= cat.topic_count %></span>
+            <% if (cat.latest_title) { %>
+              <span class="cat-latest"><%= cat.latest_title %></span>
+            <% } %>
+          </div>
+        </div>
+      </a>
+    <% }); %>
+    <% if (categories.length === 0) { %>
+      <div class="empty-card">
+        <svg class="empty-card-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        <p>暂无版块</p>
+        <span>管理员尚未创建任何版块</span>
+      </div>
+    <% } %>
+  </div>
+</div>

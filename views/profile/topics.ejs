@@ -1,0 +1,45 @@
+<div class="container">
+  <a href="/profile" class="back-link">&#8592; 返回个人中心</a>
+  <h1 class="page-title">我的帖子</h1>
+
+  <% if (topics.length === 0) { %>
+    <div class="empty-state">
+      <p class="empty-tip">还没有发布过帖子</p>
+      <a href="/topic/new" class="btn btn-primary" style="margin-top:12px">去发帖</a>
+    </div>
+  <% } else { %>
+    <div class="topic-feed">
+      <% topics.forEach(function(t) { %>
+        <div class="topic-item">
+          <a href="/topic/<%= t.id %>" class="topic-link">
+            <span class="topic-item-title"><%= t.title %></span>
+            <% if (t.is_pinned) { %><span class="badge badge-pin">置顶</span><% } %>
+            <% if (t.is_essence) { %><span class="badge badge-essence">精华</span><% } %>
+          </a>
+          <div class="topic-item-meta">
+            <span class="meta-cat"><%= t.category_name %></span>
+            &middot; <%= t.reply_count %> 回复
+            &middot; <%= t.view_count %> 阅读
+            &middot; <span class="meta-time"><%= t.created_at %></span>
+          </div>
+        </div>
+      <% }); %>
+    </div>
+
+    <% if (pagination.totalPages > 1) { %>
+    <div class="pagination">
+      <% if (pagination.page > 1) { %>
+        <a href="/profile/topics?page=<%= pagination.page - 1 %>" class="page-btn">&laquo; 上一页</a>
+      <% } else { %>
+        <span class="page-btn disabled">&laquo; 上一页</span>
+      <% } %>
+      <span class="page-info">第 <%= pagination.page %> / <%= pagination.totalPages %> 页（共 <%= pagination.total %> 篇）</span>
+      <% if (pagination.page < pagination.totalPages) { %>
+        <a href="/profile/topics?page=<%= pagination.page + 1 %>" class="page-btn">下一页 &raquo;</a>
+      <% } else { %>
+        <span class="page-btn disabled">下一页 &raquo;</span>
+      <% } %>
+    </div>
+    <% } %>
+  <% } %>
+</div>

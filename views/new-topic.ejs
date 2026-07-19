@@ -1,0 +1,157 @@
+<div class="container container-sm">
+  <div class="section-label">发帖</div>
+  <form id="newTopicForm" class="form form-card" onsubmit="handleSubmit(event)">
+    <div class="form-group">
+      <label>选择版块</label>
+
+      <div id="catCompact" class="cat-compact" style="display:none">
+        <span class="cat-compact-chip" id="catCompactChip">
+          <span class="cat-chip-icon" id="catCompactIcon"></span>
+          <span id="catCompactName"></span>
+        </span>
+        <button type="button" class="cat-compact-change" onclick="showCatChips()">更改版块</button>
+      </div>
+
+      <div class="cat-chip-selector" id="catChips">
+        <% var isAdminUser = typeof user !== 'undefined' && user && user.role === 'admin'; %>
+        <% categories.forEach(function(cat, i) { %>
+          <% var colors = ['#6366f1','#8b5cf6','#ec4899','#f97316','#06b6d4','#10b981']; %>
+          <% if (cat.post_restricted && !isAdminUser) { %>
+          <span class="cat-chip cat-chip-disabled" data-id="<%= cat.id %>" data-name="<%= cat.name %>" data-color="<%= colors[i % 6] %>" onclick="showRestrictedTip()">
+            <span class="cat-chip-icon"><%= cat.name.charAt(0) %></span>
+            <span><%= cat.name %></span>
+            <span class="cat-chip-badge">仅管理员</span>
+          </span>
+          <% } else { %>
+          <span class="cat-chip" data-id="<%= cat.id %>" data-name="<%= cat.name %>" data-color="<%= colors[i % 6] %>" onclick="selectChip(this,<%= cat.id %>)">
+            <span class="cat-chip-icon"><%= cat.name.charAt(0) %></span>
+            <span><%= cat.name %></span>
+          </span>
+          <% } %>
+        <% }); %>
+      </div>
+      <input type="hidden" id="category_id" name="category_id" value="">
+      <small id="catError" style="display:none;color:var(--danger)">请选择一个版块</small>
+    </div>
+
+    <div class="form-group">
+      <div class="input-header">
+        <label for="title">标题</label>
+        <span class="word-count" id="titleCount">0/100</span>
+      </div>
+      <input type="text" id="title" name="title" required maxlength="100" class="input" placeholder="1-100 个字符" oninput="updateCount('title',100)">
+    </div>
+
+    <div class="form-group">
+      <div class="input-header">
+        <label for="content">内容（支持 Markdown）</label>
+        <span class="word-count" id="contentCount">0/20000</span>
+      </div>
+      <textarea id="content" name="content" required maxlength="20000" class="input textarea textarea-lg" rows="12" placeholder="支持 Markdown 格式..." oninput="updateCount('content',20000);autoResize(this)"></textarea>
+    </div>
+
+    <div id="topicError" class="form-error" style="display:none"></div>
+    <button type="submit" id="submitBtn" class="btn btn-primary btn-block btn-lg">发帖</button>
+  </form>
+</div>
+
+<script>
+var selectedCatId = null;
+
+(function() {
+  var params = new URLSearchParams(location.search);
+  var categoryId = params.get('category_id');
+  if (categoryId) {
+    var chip = document.querySelector('.cat-chip[data-id="' + categoryId + '"]');
+    if (chip) {
+      selectedCatId = parseInt(categoryId);
+      document.getElementById('category_id').value = categoryId;
+      chip.classList.add('selected');
+      setCompactView(chip.dataset.name, chip.dataset.color, chip.querySelector('.cat-chip-icon').textContent);
+    }
+  }
+})();
+
+function selectChip(el, id) {
+  document.querySelectorAll('.cat-chip').forEach(function(c) { c.classList.remove('selected'); });
+  el.classList.add('selected');
+  selectedCatId = id;
+  document.getElementById('category_id').value = id;
+  document.getElementById('catError').style.display = 'none';
+
+  setCompactView(el.dataset.name, el.dataset.color, el.querySelector('.cat-chip-icon').textContent);
+  hideCatChips();
+}
+
+function setCompactView(name, color, icon) {
+  document.getElementById('catCompactName').textContent = name;
+  document.getElementById('catCompactIcon').textContent = icon;
+  document.getElementById('catCompactChip').style.setProperty('--chip-color', color);
+  document.getElementById('catCompact').style.display = 'flex';
+  document.getElementById('catChips').style.display = 'none';
+}
+
+function showCatChips() {
+  document.getElementById('catCompact').style.display = 'none';
+  document.getElementById('catChips').style.display = '';
+}
+
+function hideCatChips() {
+  document.getElementById('catCompact').style.display = 'flex';
+  document.getElementById('catChips').style.display = 'none';
+}
+
+function updateCount(fieldId, max) {
+  var el = document.getElementById(fieldId);
+  var countEl = document.getElementById(fieldId + 'Count');
+  countEl.textContent = el.value.length + '/' + max;
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 480) + 'px';
+}
+
+function showRestrictedTip() {
+  alert('仅管理员可在该版块发帖');
+}
+
+function handleSubmit(e) {
+  e.preventDefault();
+  var errEl = document.getElementById('topicError');
+  errEl.style.display = 'none';
+
+  if (!selectedCatId) {
+    document.getElementById('catError').style.display = 'block';
+    return;
+  }
+
+  var title = document.getElementById('title').value.trim();
+  var content = document.getElementById('content').value.trim();
+  if (!title || !content) return;
+
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+
+  fetch('/api/topics', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      category_id: selectedCatId,
+      title: title,
+      content: content,
+    }),
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      if (result.ok) {
+        location.href = '/topic/' + result.data.topic.id;
+      } else {
+        errEl.textContent = result.data.error || '发帖失败';
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '发帖';
+      }
+    });
+}
+</script>

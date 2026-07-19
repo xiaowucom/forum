@@ -1,0 +1,48 @@
+<div class="container container-sm">
+  <h1 class="page-title">编辑帖子</h1>
+  <form id="editTopicForm" class="form" onsubmit="handleSubmit(event)">
+    <div class="form-group">
+      <label>版块</label>
+      <select id="category_id" name="category_id" disabled class="input">
+        <% categories.forEach(function(cat) { %>
+          <option value="<%= cat.id %>" <%= cat.id === topic.category_id ? 'selected' : '' %>><%= cat.name %></option>
+        <% }); %>
+      </select>
+      <small>版块不可修改</small>
+    </div>
+    <div class="form-group">
+      <label for="title">标题</label>
+      <input type="text" id="title" name="title" required maxlength="100" class="input" value="<%= topic.title %>">
+    </div>
+    <div class="form-group">
+      <label for="content">内容（支持 Markdown）</label>
+      <textarea id="content" name="content" required maxlength="20000" class="input textarea" rows="10"><%= topic.content %></textarea>
+    </div>
+    <div id="editError" class="form-error" style="display:none"></div>
+    <button type="submit" class="btn btn-primary btn-block">保存修改</button>
+  </form>
+</div>
+
+<script>
+function handleSubmit(e) {
+  e.preventDefault();
+  var errEl = document.getElementById('editError');
+  errEl.style.display = 'none';
+  fetch('/api/topics/<%= topic.id %>', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: document.getElementById('title').value.trim(),
+      content: document.getElementById('content').value.trim(),
+    }),
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      if (result.ok) {
+        location.href = '/topic/<%= topic.id %>';
+      } else {
+        errEl.textContent = result.data.error || '保存失败';
+        errEl.style.display = 'block';
+      }
+    });
+}
+</script>

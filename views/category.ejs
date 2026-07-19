@@ -1,0 +1,151 @@
+<div class="container" id="categoryPage">
+  <div id="catLoading" class="loading">加载中...</div>
+  <div id="catContent" style="display:none"></div>
+</div>
+
+<script>
+(function() {
+  var catId = '<%= categoryId %>';
+  var page = Math.max(1, parseInt('<%= typeof query !== "undefined" && query.page ? query.page : 1 %>') || 1);
+  var pageSize = (window.SITE_CONFIG && window.SITE_CONFIG.pageSize) || 20;
+  var currentUser = <%- JSON.stringify(typeof user !== 'undefined' ? user : null) %>;
+  var serverCategory = <%- typeof category !== 'undefined' ? category : 'null' %>;
+
+  function formatTime(dt) {
+    if (!dt) return '';
+    var d = new Date(dt.replace(' ', 'T'));
+    var now = new Date();
+    var diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+    if (diff < 2592000) return Math.floor(diff / 86400) + ' 天前';
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+  }
+
+  function authorHTML(u) {
+    if (!u || !u.username) return '<span class="deleted-user">已注销用户</span>';
+    return '<a href="/user/' + u.author_user_id + '" class="author-link">' + escapeHTML(u.nickname || u.username) + '</a>';
+  }
+
+  function escapeHTML(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function fetchJSON(url) {
+    return fetch(url).then(function(r) {
+      return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+    });
+  }
+
+  function loadTopics() {
+    var url = '/api/topics?category_id=' + catId + '&page=' + page + '&pageSize=' + pageSize;
+    fetchJSON(url).then(function(result) {
+      if (!result.ok) {
+        document.getElementById('catLoading').textContent = '加载失败';
+        return;
+      }
+      renderTopics(result.data);
+    });
+  }
+
+  function renderTopics(data) {
+    var isAdmin = currentUser && currentUser.role === 'admin';
+    var postRestricted = serverCategory ? serverCategory.post_restricted : false;
+
+    var html = '<div class="cat-page-header">';
+    html += '<div><h1 class="page-title" id="catName">' + (serverCategory ? serverCategory.name : '加载中...') + '</h1>';
+    html += '<p class="cat-page-desc" id="catDesc"' + (serverCategory && serverCategory.description ? '' : ' style="display:none"') + '>' + (serverCategory ? (serverCategory.description || '') : '') + '</p></div>';
+
+    // 发帖按钮：受限版块仅管理员可见
+    if (postRestricted && !isAdmin) {
+      html += '<span class="restricted-tip">仅管理员可在本版块发帖</span>';
+    } else {
+      html += '<a href="/topic/new?category_id=' + catId + '" class="btn btn-primary cat-post-btn">发帖</a>';
+    }
+    html += '</div>';
+    if (data.topics.length === 0) {
+      html += '<div class="empty-card">' +
+        '<svg class="empty-card-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>' +
+        '<p>该版块暂无帖子</p>' +
+        (postRestricted && !isAdmin ? '' : '<span>成为第一个发帖的人吧</span>') +
+        '</div>';
+    } else {
+      data.topics.forEach(function(t) {
+        var badges = '';
+        if (t.is_pinned) badges += '<span class="badge badge-pin">置顶</span> ';
+        if (t.is_essence) badges += '<span class="badge badge-essence">精华</span> ';
+        html += '<div class="post-row stagger-in">' +
+          '<div class="post-accent"></div>' +
+          '<div class="post-body">' +
+            '<div class="post-head">' +
+              '<a href="/topic/' + t.id + '" class="post-title">' + escapeHTML(t.title) + '</a>' +
+              badges +
+            '</div>' +
+            '<div class="post-meta">' +
+              authorHTML(t) +
+              '<span class="post-dot"></span>' +
+              '<time>' + formatTime(t.created_at) + '</time>' +
+              '<span class="post-dot"></span>' +
+              '<span>' + t.reply_count + ' 回复</span>' +
+              '<span class="post-dot"></span>' +
+              '<span>' + t.view_count + ' 阅读</span>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      });
+    }
+
+    if (data.totalPages > 1) {
+      html += '<div class="pagination">';
+      if (page > 1) {
+        html += '<a href="/category/' + catId + '?page=' + (page - 1) + '" class="page-btn">&laquo; 上一页</a>';
+      } else {
+        html += '<span class="page-btn disabled">&laquo; 上一页</span>';
+      }
+      html += '<span class="page-info">第 ' + page + ' / ' + data.totalPages + ' 页</span>';
+      if (page < data.totalPages) {
+        html += '<a href="/category/' + catId + '?page=' + (page + 1) + '" class="page-btn">下一页 &raquo;</a>';
+      } else {
+        html += '<span class="page-btn disabled">下一页 &raquo;</span>';
+      }
+      html += '</div>';
+    }
+
+    document.getElementById('catContent').innerHTML = html;
+    document.getElementById('catContent').style.display = 'block';
+    document.getElementById('catLoading').style.display = 'none';
+
+    fetch('/api/categories').then(function(r) { return r.json(); }).then(function(d) {
+      var found = d.categories.find(function(c) { return c.id == catId; });
+      if (found) {
+        document.getElementById('catName').textContent = found.name;
+        if (found.description) {
+          document.getElementById('catDesc').textContent = found.description;
+          document.getElementById('catDesc').style.display = 'block';
+        }
+        // 更新发帖按钮（API 返回最新权限状态）
+        var isAdmin = currentUser && currentUser.role === 'admin';
+        var btnEl = document.querySelector('.cat-post-btn');
+        var tipEl = document.querySelector('.restricted-tip');
+        if (found.post_restricted && !isAdmin) {
+          if (btnEl) { btnEl.style.display = 'none'; }
+          if (!tipEl) {
+            var header = document.querySelector('.cat-page-header');
+            var tip = document.createElement('span');
+            tip.className = 'restricted-tip';
+            tip.textContent = '仅管理员可在本版块发帖';
+            header.appendChild(tip);
+          }
+        }
+      }
+    });
+  }
+
+  loadTopics();
+})();
+</script>

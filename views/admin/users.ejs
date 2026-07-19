@@ -1,0 +1,179 @@
+<div class="container">
+  <h1 class="page-title">用户管理</h1>
+  <div class="admin-nav">
+    <a href="/admin" class="admin-nav-link">概览</a>
+    <a href="/admin/users" class="admin-nav-link active">用户管理</a>
+    <a href="/admin/categories" class="admin-nav-link">版块管理</a>
+    <a href="/admin/messages" class="admin-nav-link">系统消息</a>
+    <a href="/admin/topics" class="admin-nav-link">帖子管理</a>
+    <a href="/admin/settings" class="admin-nav-link">设置</a>
+    <a href="/admin/logs" class="admin-nav-link">日志中心</a>
+  </div>
+
+  <div id="userError" class="form-error" style="display:none"></div>
+
+  <div class="search-form" style="margin-bottom:16px">
+    <input type="text" id="userSearch" class="input" placeholder="搜索用户名..." style="max-width:300px" onkeydown="if(event.key==='Enter'){page=1;loadUsers()}">
+    <button class="btn btn-primary" onclick="page=1;loadUsers()">搜索</button>
+  </div>
+
+  <div id="userCardList" class="admin-card-list">
+    <div class="empty-state">加载中...</div>
+  </div>
+
+  <div id="userPagination"></div>
+</div>
+
+<script>
+(function() {
+  var currentUserId = <%- JSON.stringify(typeof user !== 'undefined' ? user.id : null) %>;
+  var page = 1;
+  var pageSize = (window.SITE_CONFIG && window.SITE_CONFIG.pageSize) || 20;
+
+  function showError(msg) {
+    var el = document.getElementById('userError');
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(function() { el.style.display = 'none'; }, 4000);
+  }
+
+  function fetchJSON(url, opts) {
+    return fetch(url, opts).then(function(r) {
+      return r.json().then(function(d) { return { ok: r.ok, status: r.status, data: d }; });
+    });
+  }
+
+  function loadUsers() {
+    var search = document.getElementById('userSearch').value.trim();
+    var url = '/api/admin/users?page=' + page + '&pageSize=' + pageSize;
+    if (search) url += '&search=' + encodeURIComponent(search);
+
+    fetchJSON(url).then(function(result) {
+      if (!result.ok) { showError(result.data.error); return; }
+      renderUsers(result.data);
+    }).catch(function() { showError('加载失败，请刷新重试'); });
+  }
+
+  function escapeHTML(str) {
+    var div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
+  function formatTime(t) {
+    if (!t) return '';
+    return t.replace('T', ' ').substring(0, 16);
+  }
+
+  function renderUsers(data) {
+    var html = '';
+    if (data.users.length === 0) {
+      html = '<div class="empty-state">暂无用户</div>';
+    } else {
+      data.users.forEach(function(u) {
+        var isSelf = u.id === currentUserId;
+        var roleLabel = u.role === 'admin' ? '管理员' : '普通用户';
+        var roleBadge = u.role === 'admin'
+          ? '<span class="admin-role-badge admin-role-badge--admin">管理员</span>'
+          : '<span class="admin-role-badge">用户</span>';
+
+        var actions = '';
+        if (isSelf) {
+          actions = '<span class="text-muted" style="padding:0 8px">当前用户</span>';
+        } else {
+          var newRole = u.role === 'admin' ? 'user' : 'admin';
+          var toggleTitle = u.role === 'admin' ? '降为普通用户' : '升为管理员';
+          var toggleIcon = u.role === 'admin' ? '&#8595;' : '&#8593;';
+          actions =
+            '<button class="icon-btn" title="' + toggleTitle + '" onclick="changeRole(' + u.id + ',\'' + newRole + '\')">' + toggleIcon + '</button>' +
+            '<button class="icon-btn icon-btn-danger" title="删除用户" onclick="deleteUser(' + u.id + ',\'' + escapeHTML(u.username) + '\')">&times;</button>';
+
+          // 邮箱操作按钮
+          if (u.email) {
+            actions += '<button class="icon-btn" title="发送重置邮件" onclick="sendReset(' + u.id + ',\'' + escapeHTML(u.username) + '\')">&#9993;</button>' +
+                       '<button class="icon-btn icon-btn-danger" title="解绑邮箱" onclick="unbindEmail(' + u.id + ',\'' + escapeHTML(u.username) + '\',' + !!u.email + ')">&#10007;</button>';
+          } else {
+            actions += '<button class="icon-btn" disabled title="未绑定邮箱，无法发送" style="opacity:.35;cursor:not-allowed">&#9993;</button>';
+          }
+        }
+
+        var displayName = u.nickname && u.nickname !== u.username
+          ? '<a href="/user/' + u.id + '" class="author-link">' + escapeHTML(u.nickname) + '</a> <span class="text-muted" style="font-size:12px">(<a href="/user/' + u.id + '" class="author-link">' + escapeHTML(u.username) + '</a>)</span>'
+          : '<a href="/user/' + u.id + '" class="author-link">' + escapeHTML(u.username) + '</a>';
+
+        var emailInfo = u.email
+          ? '<span class="text-muted" style="font-size:12px">' + escapeHTML(u.email) + '</span>'
+          : '<span class="text-muted" style="font-size:12px;font-style:italic">未绑定邮箱</span>';
+
+        html +=
+          '<div class="admin-card">' +
+            '<div class="admin-card-avatar">' + escapeHTML(u.nickname || u.username).charAt(0).toUpperCase() + '</div>' +
+            '<div class="admin-card-body">' +
+              '<div class="admin-card-title">' + displayName + ' ' + roleBadge + '</div>' +
+              '<div class="admin-card-meta">' + emailInfo + ' &middot; ' + formatTime(u.created_at) + '</div>' +
+            '</div>' +
+            '<div class="admin-card-actions">' + actions + '</div>' +
+          '</div>';
+      });
+    }
+    document.getElementById('userCardList').innerHTML = html;
+
+    var pagHtml = '';
+    if (data.totalPages > 1) {
+      pagHtml += '<div class="pagination" style="margin-top:16px">';
+      if (page > 1) pagHtml += '<a href="javascript:void(0)" class="page-btn" onclick="page=' + (page - 1) + ';loadUsers()">&laquo; 上一页</a>';
+      pagHtml += '<span class="page-info">第 ' + page + ' / ' + data.totalPages + ' 页</span>';
+      if (page < data.totalPages) pagHtml += '<a href="javascript:void(0)" class="page-btn" onclick="page=' + (page + 1) + ';loadUsers()">下一页 &raquo;</a>';
+      pagHtml += '</div>';
+    }
+    document.getElementById('userPagination').innerHTML = pagHtml;
+  }
+
+  window.changeRole = function(userId, newRole) {
+    var label = newRole === 'admin' ? '管理员' : '普通用户';
+    showConfirm('确定将该用户角色改为「' + label + '」？', { title: '修改角色' })
+      .then(function(ok) { if (!ok) return;
+    fetchJSON('/api/admin/users/' + userId + '/role', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: newRole }),
+    }).then(function(r) {
+      if (r.ok) { showToast('角色已更新', 'success'); loadUsers(); }
+      else { showError(r.data.error); }
+    });
+    });
+  };
+
+  window.deleteUser = function(userId, username) {
+    showConfirm('确定删除用户「' + username + '」？\n该用户的帖子和回复将保留，显示为"已注销用户"。', { title: '删除用户', danger: true, confirmText: '删除' })
+      .then(function(ok) { if (!ok) return;
+    fetchJSON('/api/admin/users/' + userId, { method: 'DELETE' }).then(function(r) {
+      if (r.ok) { showToast('用户已删除', 'success'); loadUsers(); }
+      else { showError(r.data.error); }
+    });
+    });
+  };
+
+  window.unbindEmail = function(userId, username) {
+    showConfirm('确定解绑「' + username + '」的邮箱吗？\n解绑后该用户需要重新绑定才能使用邮箱相关功能。', { title: '解绑邮箱', danger: true, confirmText: '解绑' })
+      .then(function(ok) { if (!ok) return;
+    fetchJSON('/api/admin/users/' + userId + '/unbind-email', { method: 'PUT' }).then(function(r) {
+      if (r.ok) { showToast('邮箱已解绑', 'success'); loadUsers(); }
+      else { showError(r.data.error); }
+    });
+    });
+  };
+
+  window.sendReset = function(userId, username) {
+    showConfirm('确定向「' + username + '」发送密码重置邮件吗？\n用户将收到一封包含验证码的邮件，用于重置自己的密码。', { title: '发送重置邮件', confirmText: '发送' })
+      .then(function(ok) { if (!ok) return;
+    fetchJSON('/api/admin/users/' + userId + '/send-reset', { method: 'POST' }).then(function(r) {
+      if (r.ok) { showToast(r.data.message, 'success'); }
+      else { showError(r.data.error); }
+    });
+    });
+  };
+
+  loadUsers();
+})();
+</script>

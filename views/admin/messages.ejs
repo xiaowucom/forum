@@ -1,0 +1,221 @@
+<div class="container">
+  <div class="admin-nav">
+    <a href="/admin" class="admin-nav-link">概览</a>
+    <a href="/admin/users" class="admin-nav-link">用户管理</a>
+    <a href="/admin/categories" class="admin-nav-link">版块管理</a>
+    <a href="/admin/messages" class="admin-nav-link active">系统消息</a>
+    <a href="/admin/topics" class="admin-nav-link">帖子管理</a>
+    <a href="/admin/settings" class="admin-nav-link">设置</a>
+    <a href="/admin/logs" class="admin-nav-link">日志中心</a>
+  </div>
+
+  <h1 class="page-title">发送系统消息</h1>
+
+  <div class="form-card">
+    <div class="form-group">
+      <label for="msgTitle">消息标题</label>
+      <input type="text" id="msgTitle" class="input" placeholder="如：服务器维护公告" maxlength="100">
+    </div>
+    <div class="form-group">
+      <label for="msgContent">消息正文</label>
+      <textarea id="msgContent" class="input" rows="6" placeholder="输入消息内容..." maxlength="2000"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label>发送对象</label>
+      <div class="radio-group">
+        <label class="radio-label"><input type="radio" name="target" value="all" checked onchange="toggleTarget()"> 全部用户</label>
+        <label class="radio-label"><input type="radio" name="target" value="user" onchange="toggleTarget()"> 指定用户</label>
+      </div>
+    </div>
+
+    <div class="form-group" id="userSelectGroup" style="display:none">
+      <label>选择用户</label>
+      <input type="text" id="userFilter" class="input" placeholder="输入用户名实时过滤..." autocomplete="off" oninput="filterUsers()">
+      <div id="userList" class="user-list-scroll"></div>
+      <input type="hidden" id="selectedUserId" value="">
+      <div id="selectedUserLabel" class="selected-user" style="display:none"></div>
+    </div>
+
+    <div id="sendError" class="form-error" style="display:none"></div>
+
+    <div class="form-actions">
+      <button class="btn btn-primary btn-lg" id="sendBtn" onclick="sendMessage()">发送</button>
+    </div>
+  </div>
+
+  <h2 class="section-title" style="margin-top:36px">发送记录</h2>
+  <div id="historyList" class="history-list">
+    <div class="loading">加载中...</div>
+  </div>
+</div>
+
+<script>
+var allUsers = [];
+var selectedUserId = null;
+
+function toggleTarget() {
+  var target = document.querySelector('input[name="target"]:checked').value;
+  document.getElementById('userSelectGroup').style.display = target === 'user' ? 'block' : 'none';
+  if (target === 'all') {
+    selectedUserId = null;
+    document.getElementById('selectedUserId').value = '';
+    document.getElementById('selectedUserLabel').style.display = 'none';
+    document.getElementById('userFilter').value = '';
+    renderUserList(allUsers);
+    document.querySelectorAll('.user-list-item').forEach(function(el) { el.classList.remove('selected'); });
+  }
+}
+
+function loadUsers() {
+  fetch('/api/admin/users?pageSize=200')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      allUsers = d.users;
+      renderUserList(allUsers);
+    }).catch(function() { document.getElementById('userList').innerHTML = '<p class="text-muted" style="padding:10px">加载用户列表失败</p>'; });
+}
+
+function renderUserList(users) {
+  var el = document.getElementById('userList');
+  if (users.length === 0) {
+    el.innerHTML = '<p class="text-muted" style="padding:10px">无匹配用户</p>';
+    return;
+  }
+  var html = '';
+  users.forEach(function(u) {
+    var sel = (selectedUserId === u.id) ? ' selected' : '';
+    var displayName = u.nickname && u.nickname !== u.username
+      ? u.nickname + ' (' + u.username + ')'
+      : u.username;
+    html += '<div class="user-list-item' + sel + '" data-id="' + u.id + '" onclick="selectUser(' + u.id + ',\'' + u.username + '\')">'
+      + '<span class="user-avatar-mini">' + (u.nickname || u.username).charAt(0) + '</span>'
+      + '<span>' + displayName + '</span>'
+      + '<span class="text-muted" style="margin-left:auto;font-size:12px">ID:' + u.id + '</span>'
+      + '</div>';
+  });
+  el.innerHTML = html;
+}
+
+function filterUsers() {
+  var q = document.getElementById('userFilter').value.trim().toLowerCase();
+  if (!q) { renderUserList(allUsers); return; }
+  var filtered = allUsers.filter(function(u) { return u.username.toLowerCase().indexOf(q) !== -1 || (u.nickname && u.nickname.toLowerCase().indexOf(q) !== -1); });
+  renderUserList(filtered);
+}
+
+function selectUser(id, name) {
+  selectedUserId = id;
+  document.getElementById('selectedUserId').value = id;
+  var label = document.getElementById('selectedUserLabel');
+  label.textContent = '已选择: ' + name + ' (ID:' + id + ')';
+  label.style.display = 'block';
+  document.querySelectorAll('.user-list-item').forEach(function(el) {
+    el.classList.toggle('selected', parseInt(el.getAttribute('data-id')) === id);
+  });
+}
+
+function formatTime(t) {
+  if (!t) return '';
+  return t.replace('T', ' ').substring(0, 16);
+}
+
+function loadHistory() {
+  fetch('/api/admin/messages/history')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var el = document.getElementById('historyList');
+      if (d.records.length === 0) {
+        el.innerHTML = '<p class="empty-tip">暂无发送记录</p>';
+        return;
+      }
+      var html = '';
+      d.records.forEach(function(r) {
+        var targetLabel = r.recipient_count >= d.total_users ? '全部用户' : '指定用户';
+        html += '<div class="history-item">'
+          + '<div class="history-title">' + r.title + '</div>'
+          + '<div class="history-meta">'
+          + '<span>发送给: ' + targetLabel + '</span>'
+          + '<span> · ' + formatTime(r.created_at) + '</span>'
+          + '<span> · 发送人: ' + (r.admin_name || '管理员') + '</span>'
+          + '</div>'
+          + '</div>';
+      });
+      el.innerHTML = html;
+    })
+    .catch(function() {
+      document.getElementById('historyList').innerHTML = '<p class="empty-tip">加载失败</p>';
+    });
+}
+
+function sendMessage() {
+  var title = document.getElementById('msgTitle').value.trim();
+  var content = document.getElementById('msgContent').value.trim();
+  var target = document.querySelector('input[name="target"]:checked').value;
+  var userId = document.getElementById('selectedUserId').value;
+  var btn = document.getElementById('sendBtn');
+  var errEl = document.getElementById('sendError');
+
+  errEl.style.display = 'none';
+
+  if (!title || !content) {
+    errEl.textContent = '请填写标题和正文';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  var body = { title: title, content: content, target: target };
+  if (target === 'user') {
+    if (!userId) {
+      errEl.textContent = '请选择一位用户';
+      errEl.style.display = 'block';
+      return;
+    }
+    body.user_id = parseInt(userId);
+  }
+
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+
+  fetch('/api/admin/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      if (result.ok) {
+        btn.textContent = '已发送';
+        btn.className = 'btn btn-success btn-lg';
+        document.getElementById('msgTitle').value = '';
+        document.getElementById('msgContent').value = '';
+        if (target === 'user') {
+          selectedUserId = null;
+          document.getElementById('selectedUserId').value = '';
+          document.getElementById('selectedUserLabel').style.display = 'none';
+          document.getElementById('userFilter').value = '';
+          renderUserList(allUsers);
+        }
+        loadHistory();
+        setTimeout(function() {
+          btn.disabled = false;
+          btn.textContent = '发送';
+          btn.className = 'btn btn-primary btn-lg';
+        }, 2000);
+      } else {
+        errEl.textContent = result.data.error || '发送失败';
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '发送';
+      }
+    })
+    .catch(function() {
+      errEl.textContent = '网络错误，请重试';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '发送';
+    });
+}
+
+loadUsers();
+loadHistory();
+</script>

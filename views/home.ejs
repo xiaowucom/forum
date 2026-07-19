@@ -1,0 +1,167 @@
+<div class="hero">
+  <div class="hero-shimmer"></div>
+  <span class="hero-badge">欢迎来到社区</span>
+  <h1 class="hero-title"><%= settings.site_name %></h1>
+  <p class="hero-sub"><%= settings.site_description %></p>
+</div>
+
+<div class="container">
+  <div class="section-label">最新帖子</div>
+
+  <div id="topicFeed">
+    <% if (topics.length === 0) { %>
+      <div class="empty-card">
+        <svg class="empty-card-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        <p>暂无帖子</p>
+        <span>成为第一个发帖的人吧</span>
+      </div>
+    <% } else { %>
+      <% topics.forEach(function(t, i) { %>
+        <div class="post-row stagger-in">
+          <div class="post-accent"></div>
+          <div class="post-body">
+            <div class="post-head">
+              <a href="/topic/<%= t.id %>" class="post-title"><%= t.title %></a>
+              <% if (t.is_pinned) { %><span class="badge badge-pin">置顶</span><% } %>
+              <% if (t.is_essence) { %><span class="badge badge-essence">精华</span><% } %>
+            </div>
+            <div class="post-meta">
+              <% if (t.username) { %>
+                <a href="/user/<%= t.author_user_id %>" class="author-link"><%= t.nickname || t.username %></a>
+              <% } else { %>
+                <span class="deleted-user">已注销用户</span>
+              <% } %>
+              <span class="post-dot"></span>
+              <a href="/category/<%= t.category_id %>" class="post-cat"><%= t.category_name %></a>
+              <span class="post-dot"></span>
+              <time><%= t.created_at %></time>
+              <span class="post-dot"></span>
+              <span><%= t.reply_count %> 回复</span>
+              <span class="post-dot"></span>
+              <span><%= t.view_count %> 阅读</span>
+            </div>
+          </div>
+        </div>
+      <% }); %>
+    <% } %>
+  </div>
+
+  <% if (pagination.totalPages > 1) { %>
+  <nav class="pagination">
+    <% if (pagination.page > 1) { %>
+      <a href="?page=<%= pagination.page - 1 %>" class="page-btn" data-page="<%= pagination.page - 1 %>">&laquo; 上一页</a>
+    <% } else { %>
+      <span class="page-btn disabled">&laquo; 上一页</span>
+    <% } %>
+    <span class="page-info">第 <%= pagination.page %> / <%= pagination.totalPages %> 页</span>
+    <% if (pagination.page < pagination.totalPages) { %>
+      <a href="?page=<%= pagination.page + 1 %>" class="page-btn" data-page="<%= pagination.page + 1 %>">下一页 &raquo;</a>
+    <% } else { %>
+      <span class="page-btn disabled">下一页 &raquo;</span>
+    <% } %>
+  </nav>
+  <% } %>
+</div>
+
+<script>
+(function() {
+  var totalPages = <%= pagination.totalPages %>;
+
+  function formatTime(dt) {
+    if (!dt) return '';
+    var d = new Date(dt.replace(' ', 'T'));
+    var now = new Date();
+    var diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+    if (diff < 2592000) return Math.floor(diff / 86400) + ' 天前';
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  function escapeHTML(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function renderTopics(data) {
+    var html = '';
+    if (data.topics.length === 0) {
+      html = '<div class="empty-card">' +
+        '<svg class="empty-card-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>' +
+        '<p>暂无帖子</p>' +
+        '<span>成为第一个发帖的人吧</span>' +
+        '</div>';
+    } else {
+      data.topics.forEach(function(t, i) {
+        var badges = '';
+        if (t.is_pinned) badges += '<span class="badge badge-pin">置顶</span> ';
+        if (t.is_essence) badges += '<span class="badge badge-essence">精华</span> ';
+        var author = t.username
+          ? '<a href="/user/' + t.author_user_id + '" class="author-link">' + escapeHTML(t.nickname || t.username) + '</a>'
+          : '<span class="deleted-user">已注销用户</span>';
+        html += '<div class="post-row stagger-in">' +
+          '<div class="post-accent"></div>' +
+          '<div class="post-body">' +
+            '<div class="post-head">' +
+              '<a href="/topic/' + t.id + '" class="post-title">' + escapeHTML(t.title) + '</a>' +
+              badges +
+            '</div>' +
+            '<div class="post-meta">' +
+              author +
+              '<span class="post-dot"></span>' +
+              '<a href="/category/' + t.category_id + '" class="post-cat">' + escapeHTML(t.category_name || '') + '</a>' +
+              '<span class="post-dot"></span>' +
+              '<time>' + formatTime(t.created_at) + '</time>' +
+              '<span class="post-dot"></span>' +
+              '<span>' + t.reply_count + ' 回复</span>' +
+              '<span class="post-dot"></span>' +
+              '<span>' + t.view_count + ' 阅读</span>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      });
+    }
+    document.getElementById('topicFeed').innerHTML = html;
+  }
+
+  function renderPagination(page) {
+    var container = document.querySelector('.pagination');
+    if (!container || totalPages <= 1) return;
+    var html = '';
+    if (page > 1) {
+      html += '<a href="?page=' + (page-1) + '" class="page-btn" data-page="' + (page-1) + '">&laquo; 上一页</a>';
+    } else {
+      html += '<span class="page-btn disabled">&laquo; 上一页</span>';
+    }
+    html += '<span class="page-info">第 ' + page + ' / ' + totalPages + ' 页</span>';
+    if (page < totalPages) {
+      html += '<a href="?page=' + (page+1) + '" class="page-btn" data-page="' + (page+1) + '">下一页 &raquo;</a>';
+    } else {
+      html += '<span class="page-btn disabled">下一页 &raquo;</span>';
+    }
+    container.innerHTML = html;
+    bindPagination();
+  }
+
+  function bindPagination() {
+    document.querySelectorAll('.page-btn[data-page]').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        var page = parseInt(this.getAttribute('data-page'));
+        fetch('/api/topics?page=' + page + '&pageSize=' + ((window.SITE_CONFIG && window.SITE_CONFIG.pageSize) || 20))
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            totalPages = data.totalPages;
+            renderTopics(data);
+            renderPagination(page);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+      });
+    });
+  }
+
+  bindPagination();
+})();
+</script>
